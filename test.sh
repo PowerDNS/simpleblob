@@ -27,7 +27,7 @@ if [ -z "$SIMPLEBLOB_TEST_S3_CONFIG" ]; then
 
     # Start MinIO
     echo "* Starting $minio on port 34730"
-    tmpdir=$(mktemp -d -t minio)
+    tmpdir=$(mktemp -d -t minio.XXXXXX)
     "$minio" server --address 127.0.0.1:34730 --console-address 127.0.0.1:34731 --quiet "$tmpdir" &
     sleep 3
 fi
