@@ -2,6 +2,7 @@
 # Simpleblob
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/PowerDNS/simpleblob.svg)](https://pkg.go.dev/github.com/PowerDNS/simpleblob)
+[![CI Tests](https://github.com/PowerDNS/simpleblob/actions/workflows/go.yml/badge.svg)](https://github.com/PowerDNS/simpleblob/actions/workflows/go.yml)
 
 Simpleblob is a Go module that simplifies the storage of arbitrary data by key from Go code. It ships with the following backends:
 
