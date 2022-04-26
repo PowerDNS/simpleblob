@@ -12,7 +12,7 @@ if [ -z "$SIMPLEBLOB_TEST_S3_CONFIG" ]; then
     export SIMPLEBLOB_TEST_S3_CONFIG="$PWD/test-minio.json"
 
     # Check for existing minio
-    minio=$(which minio)
+    minio=$(which minio || true)
 
     # Fetch minio if not found
     if [ -z "$minio" ]; then
