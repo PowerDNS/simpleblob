@@ -1,0 +1,5 @@
+.*.swp
+*~
+/tmp
+/bin/*
+.DS_Store
