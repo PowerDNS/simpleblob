@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/PowerDNS/go-tlsconfig"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	s3config "github.com/aws/aws-sdk-go-v2/config"
@@ -50,6 +51,10 @@ type Options struct {
 	// EndpointURL can be set to something like "http://localhost:9000" when using Minio
 	// instead of AWS S3.
 	EndpointURL string `yaml:"endpoint_url"`
+
+	// TLS allows customising the TLS configuration
+	// See https://github.com/PowerDNS/go-tlsconfig for the available options
+	TLS tlsconfig.Config `yaml:"tls"`
 
 	// InitTimeout is the time we allow for initialisation, like credential
 	// checking and bucket creation. It defaults to DefaultInitTimeout, which
@@ -241,7 +246,30 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 		return nil, err
 	}
 
-	// Some of the following calls require a context
+	// Automatic TLS handling
+	// This MUST receive a longer running context to be able to automatically
+	// reload certificates, so we use the original ctx, not one with added
+	// InitTimeout.
+	tlsmgr, err := tlsconfig.NewManager(ctx, opt.TLS, tlsconfig.Options{
+		IsClient: true,
+		// TODO: logging might be useful here, but we need to figure this
+		//       out for other parts of simpleblob first.
+		Logr: nil,
+	})
+	if err != nil {
+		return nil, err
+	}
+	// Get an opinionated HTTP client that:
+	// - Uses a custom tls.Config
+	// - Sets proxies from the environment
+	// - Sets reasonable timeouts on various operations
+	// Check the implementation for details.
+	hc, err := tlsmgr.HTTPClient()
+	if err != nil {
+		return nil, err
+	}
+
+	// Some of the following calls require a short running context
 	ctx, cancel := context.WithTimeout(ctx, opt.InitTimeout)
 	defer cancel()
 
@@ -249,7 +277,8 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	cfg, err := s3config.LoadDefaultConfig(
 		ctx,
 		s3config.WithCredentialsProvider(creds),
-		s3config.WithRegion(opt.Region))
+		s3config.WithRegion(opt.Region),
+		s3config.WithHTTPClient(hc))
 	if err != nil {
 		return nil, err
 	}
