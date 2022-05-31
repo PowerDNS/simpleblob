@@ -246,11 +246,10 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 		return nil, err
 	}
 
-	// Some of the following calls require a context
-	ctx, cancel := context.WithTimeout(ctx, opt.InitTimeout)
-	defer cancel()
-
 	// Automatic TLS handling
+	// This MUST receive a longer running context to be able to automatically
+	// reload certificates, so we use the original ctx, not one with added
+	// InitTimeout.
 	tlsmgr, err := tlsconfig.NewManager(ctx, opt.TLS, tlsconfig.Options{
 		IsClient: true,
 		// TODO: logging might be useful here, but we need to figure this
@@ -269,6 +268,10 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Some of the following calls require a short running context
+	ctx, cancel := context.WithTimeout(ctx, opt.InitTimeout)
+	defer cancel()
 
 	creds := credentials.NewStaticCredentialsProvider(opt.AccessKey, opt.SecretKey, "")
 	cfg, err := s3config.LoadDefaultConfig(
