@@ -71,4 +71,12 @@ func DoBackendTests(t *testing.T, b simpleblob.Interface) {
 	// Load non-existing
 	_, err = b.Load(ctx, "does-not-exist")
 	assert.ErrorIs(t, err, os.ErrNotExist)
+
+	// Delete existing
+	err = b.Delete(ctx, "foo-1")
+	assert.NoError(t, err)
+
+	// Delete non-existing
+	err = b.Delete(ctx, "foo-1")
+	assert.ErrorIs(t, err, os.ErrNotExist)
 }

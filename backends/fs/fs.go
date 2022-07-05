@@ -78,6 +78,10 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 	return os.Rename(tmpPath, fullPath)
 }
 
+func (b *Backend) Delete(ctx context.Context, name string) error {
+    return os.Remove(filepath.Join(b.rootPath, name))
+}
+
 func allowedName(name string) bool {
 	// TODO: Make shared and test for rejection
 	if strings.Contains(name, "/") {

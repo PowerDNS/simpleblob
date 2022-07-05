@@ -224,6 +224,24 @@ func (b *Backend) doStore(ctx context.Context, name string, data []byte) error {
 	return err
 }
 
+func (b *Backend) Delete(ctx context.Context, name string) error {
+	metricCalls.WithLabelValues("delete").Inc()
+	metricLastCallTimestamp.WithLabelValues("delete").SetToCurrentTime()
+
+	bu, k := aws.String(b.opt.Bucket), aws.String(name)
+
+	// Check presence of name in backend
+	_, err := b.client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: bu, Key: k})
+	if err != nil && isResponseError(err, http.StatusNotFound) {
+		return os.ErrNotExist
+	}
+	_, err = b.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: bu, Key: k})
+	if err != nil {
+		metricCallErrors.WithLabelValues("delete").Inc()
+	}
+	return err
+}
+
 func isResponseError(err error, statusCode int) bool {
 	var responseError *awshttp.ResponseError
 	if !errors.As(err, &responseError) {
