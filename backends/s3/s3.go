@@ -3,26 +3,23 @@ package s3
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"sort"
 	"sync"
 	"time"
 
 	"github.com/PowerDNS/go-tlsconfig"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
-	s3config "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
+	minio "github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	"github.com/PowerDNS/simpleblob"
 )
 
 const (
+	// DefaultEndpointURL is the default S3 endpoint to use if none is set.
+	// Here, no custom endpoint assumes AWS endpoint.
+	DefaultEndpointURL = "s3.amazonaws.com"
 	// DefaultRegion is the default S3 region to use, if none is configured
 	DefaultRegion = "us-east-1"
 	// DefaultInitTimeout is the time we allow for initialisation, like credential
@@ -48,8 +45,8 @@ type Options struct {
 	// CreateBucket tells us to try to create the bucket
 	CreateBucket bool `yaml:"create_bucket"`
 
-	// EndpointURL can be set to something like "http://localhost:9000" when using Minio
-	// instead of AWS S3.
+	// EndpointURL can be set to something like "localhost:9000" when using Minio
+	// or "s3.amazonaws.com" for AWS S3.
 	EndpointURL string `yaml:"endpoint_url"`
 
 	// TLS allows customising the TLS configuration
@@ -92,9 +89,9 @@ func (o Options) Check() error {
 }
 
 type Backend struct {
-	opt      Options
-	s3config aws.Config
-	client   *s3.Client
+	opt    Options
+	config *minio.Options
+	client *minio.Client
 
 	mu         sync.Mutex
 	lastMarker string
@@ -143,32 +140,17 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobList, error) {
 	var blobs simpleblob.BlobList
 
-	paginator := s3.NewListObjectsV2Paginator(b.client, &s3.ListObjectsV2Input{
-		Bucket:    aws.String(b.opt.Bucket),
-		Prefix:    aws.String(prefix),
-		Delimiter: aws.String("/"),
+	objCh := b.client.ListObjects(ctx, b.opt.Bucket, minio.ListObjectsOptions{
+		Prefix:    prefix,
+		Recursive: false,
 	})
-
-	for paginator.HasMorePages() {
+	for obj := range objCh {
 		metricCalls.WithLabelValues("list").Inc()
 		metricLastCallTimestamp.WithLabelValues("list").SetToCurrentTime()
-		page, err := paginator.NextPage(ctx)
-		if err != nil {
-			metricCallErrors.WithLabelValues("list").Inc()
-			return nil, err
+		if obj.Key == UpdateMarkerFilename {
+			continue
 		}
-		for _, obj := range page.Contents {
-			if obj.Key == nil {
-				continue // just in case, should not happen
-			}
-			if *obj.Key == UpdateMarkerFilename {
-				continue
-			}
-			blobs = append(blobs, simpleblob.Blob{
-				Name: *obj.Key,
-				Size: obj.Size,
-			})
-		}
+		blobs = append(blobs, simpleblob.Blob{Name: obj.Key, Size: obj.Size})
 	}
 
 	// Minio appears to return them sorted, but maybe not all implementations
@@ -179,20 +161,23 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 }
 
 func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
-	buf := manager.NewWriteAtBuffer(nil)
-	downloader := manager.NewDownloader(b.client)
 	metricCalls.WithLabelValues("load").Inc()
 	metricLastCallTimestamp.WithLabelValues("load").SetToCurrentTime()
-	_, err := downloader.Download(ctx, buf, &s3.GetObjectInput{
-		Bucket: aws.String(b.opt.Bucket),
-		Key:    aws.String(name),
-	})
+
+	obj, err := b.client.GetObject(ctx, b.opt.Bucket, name, minio.GetObjectOptions{})
 	if err != nil {
-		metricCallErrors.WithLabelValues("load").Inc()
-		if isResponseError(err, http.StatusNotFound) {
-			return nil, os.ErrNotExist
+		if err = handleErrorResponse(err); err != nil {
+			return nil, err
 		}
-		return nil, err
+	} else if obj == nil {
+		return nil, os.ErrNotExist
+	}
+
+	var buf bytes.Buffer
+	if _, err = buf.ReadFrom(obj); err != nil {
+		if err = handleErrorResponse(err); err != nil {
+			return nil, err
+		}
 	}
 	return buf.Bytes(), nil
 }
@@ -212,24 +197,14 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 func (b *Backend) doStore(ctx context.Context, name string, data []byte) error {
 	metricCalls.WithLabelValues("store").Inc()
 	metricLastCallTimestamp.WithLabelValues("store").SetToCurrentTime()
-	uploader := manager.NewUploader(b.client)
-	_, err := uploader.Upload(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(b.opt.Bucket),
-		Key:    aws.String(name),
-		Body:   bytes.NewReader(data),
+
+	_, err := b.client.PutObject(ctx, b.opt.Bucket, name, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{
+		NumThreads: 3,
 	})
 	if err != nil {
 		metricCallErrors.WithLabelValues("store").Inc()
 	}
 	return err
-}
-
-func isResponseError(err error, statusCode int) bool {
-	var responseError *awshttp.ResponseError
-	if !errors.As(err, &responseError) {
-		return false
-	}
-	return responseError.ResponseError.HTTPStatusCode() == statusCode
 }
 
 func New(ctx context.Context, opt Options) (*Backend, error) {
@@ -241,6 +216,9 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	}
 	if opt.UpdateMarkerForceListInterval == 0 {
 		opt.UpdateMarkerForceListInterval = DefaultUpdateMarkerForceListInterval
+	}
+	if opt.EndpointURL == "" {
+		opt.EndpointURL = DefaultEndpointURL
 	}
 	if err := opt.Check(); err != nil {
 		return nil, err
@@ -273,50 +251,55 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	ctx, cancel := context.WithTimeout(ctx, opt.InitTimeout)
 	defer cancel()
 
-	creds := credentials.NewStaticCredentialsProvider(opt.AccessKey, opt.SecretKey, "")
-	cfg, err := s3config.LoadDefaultConfig(
-		ctx,
-		s3config.WithCredentialsProvider(creds),
-		s3config.WithRegion(opt.Region),
-		s3config.WithHTTPClient(hc))
+	cfg := &minio.Options{
+		Creds: credentials.NewStaticV4(opt.AccessKey, opt.SecretKey, ""),
+		//Secure:    true,
+		Transport: hc.Transport,
+		Region:    opt.Region,
+	}
+
+	client, err := minio.New(opt.EndpointURL, cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	if opt.EndpointURL != "" {
-		cfg.EndpointResolverWithOptions = aws.EndpointResolverWithOptionsFunc(
-			func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-				return aws.Endpoint{
-					URL:               opt.EndpointURL,
-					HostnameImmutable: true,
-					SigningRegion:     region,
-				}, nil
-			},
-		)
-	}
-
-	client := s3.NewFromConfig(cfg)
+	client.SetAppInfo("simpleblob", "0.1.1")
 
 	if opt.CreateBucket {
 		// Create bucket if it does not exist
 		metricCalls.WithLabelValues("create-bucket").Inc()
 		metricLastCallTimestamp.WithLabelValues("create-bucket").SetToCurrentTime()
-		_, err = client.CreateBucket(ctx, &s3.CreateBucketInput{
-			Bucket: aws.String(opt.Bucket),
-		})
-		if err != nil && !isResponseError(err, http.StatusConflict) {
-			metricCallErrors.WithLabelValues("create-bucket").Inc()
-			return nil, err
+
+		err := client.MakeBucket(ctx, opt.Bucket, minio.MakeBucketOptions{Region: opt.Region})
+		if err != nil {
+			if err := handleErrorResponse(err); err != nil {
+				return nil, err
+			}
 		}
 	}
 
 	b := &Backend{
-		opt:      opt,
-		s3config: cfg,
-		client:   client,
+		opt:    opt,
+		config: cfg,
+		client: client,
 	}
 
 	return b, nil
+}
+
+// handleErrorResponse takes an error, possibly a minio.ErrorResponse
+// and turns it into a well known error when possible.
+// If error is not well known, it is returned as is.
+// If error is considered to be ignorable, nil is returned.
+func handleErrorResponse(err error) error {
+	errResp := minio.ToErrorResponse(err)
+	if errResp.StatusCode == 404 {
+		return os.ErrNotExist
+	}
+	if errResp.Code != "BucketAlreadyOwnedByYou" {
+		return err
+	}
+	return nil
 }
 
 func init() {
