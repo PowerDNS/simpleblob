@@ -2,11 +2,15 @@ package tester
 
 import (
 	"context"
+	"crypto/rand"
+	"io"
+	"io/fs"
 	"os"
 	"testing"
 
 	"github.com/PowerDNS/simpleblob"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // DoBackendTests tests a backend for conformance
@@ -71,4 +75,86 @@ func DoBackendTests(t *testing.T, b simpleblob.Interface) {
 	// Load non-existing
 	_, err = b.Load(ctx, "does-not-exist")
 	assert.ErrorIs(t, err, os.ErrNotExist)
+}
+
+// DoFSWrapperTests confronts Interface to its fs.FS implementations
+func DoFSWrapperTests(t *testing.T, b simpleblob.Interface) {
+	// Wrap provided interface into a filesystem
+	// and use the backend to check operations on the filesystem.
+	// The backend is considered working from DoBackendTests.
+	fsys := simpleblob.AsFS(b)
+
+	// Filesystem is empty
+	ls, err := fs.Glob(fsys, "*")
+	assert.NoError(t, err)
+	assert.Len(t, ls, 0)
+
+	// Opening random thing fails
+	f, err := fsys.Open("something")
+	assert.Error(t, err)
+	assert.Nil(t, f)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Test single item
+	fooData := make([]byte, 64)
+	_, err = rand.Read(fooData)
+	require.NoError(t, err)
+	b.Store(ctx, "foo", fooData) // error is ignored, Store is tested above
+
+	// Item isn't listed when prefix is bad
+	ls, err = fs.Glob(fsys, "bar")
+	assert.NoError(t, err)
+	assert.Len(t, ls, 0)
+
+	// Item is listed
+	ls, err = fs.Glob(fsys, "*")
+	assert.NoError(t, err)
+	assert.Len(t, ls, 1)
+	assert.Contains(t, ls, "foo")
+
+	// Item can be loaded by name
+	f, err = fsys.Open("foo")
+	assert.NoError(t, err)
+	assert.NotNil(t, f)
+	defer func() {
+		assert.NoError(t, f.Close())
+	}()
+
+	// Item has right content
+	p, err := io.ReadAll(f)
+	assert.Equal(t, p, fooData)
+
+	// Check file info
+	info, err := f.Stat()
+	assert.NoError(t, err)
+	assert.EqualValues(t, info.Mode(), 666)
+	assert.Equal(t, info.Name(), "foo")
+	assert.EqualValues(t, info.Size(), 64)
+	assert.Equal(t, info.Sys(), fsys)
+
+	// fs.ReadFileFS is satisfied
+	p2, err := fs.ReadFile(fsys, "meh")
+	assert.Error(t, err)
+	assert.Empty(t, p2)
+	p2, err = fs.ReadFile(fsys, "foo")
+	assert.NoError(t, err)
+	assert.Equal(t, p, p2)
+
+	// fs.ReadDirFS is satisfied and allows only "." subdir
+	direntries, err := fs.ReadDir(fsys, "meh")
+	assert.Error(t, err)
+	assert.Nil(t, direntries)
+	direntries, err = fs.ReadDir(fsys, ".")
+	assert.NoError(t, err)
+	assert.Contains(t, direntries, f)
+
+	// fs.SubFS is satisfied and allows only "." subdir
+	subfsys, err := fs.Sub(fsys, "anything")
+	assert.Error(t, err)
+	assert.Nil(t, subfsys)
+	subfsys, err = fs.Sub(fsys, ".")
+	assert.NoError(t, err)
+	assert.Equal(t, fsys, subfsys)
 }

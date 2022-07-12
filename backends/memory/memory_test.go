@@ -7,6 +7,6 @@ import (
 )
 
 func TestBackend(t *testing.T) {
-	b := New()
-	tester.DoBackendTests(t, b)
+	tester.DoBackendTests(t, New())
+	tester.DoFSWrapperTests(t, New())
 }

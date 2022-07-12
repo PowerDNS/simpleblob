@@ -103,3 +103,12 @@ func TestBackend_marker(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "bar-1", string(data))
 }
+
+func TestFilesystem(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+
+	b := getBackend(ctx, t)
+	tester.DoFSWrapperTests(t, b)
+	assert.Equal(t, "", b.lastMarker)
+}
