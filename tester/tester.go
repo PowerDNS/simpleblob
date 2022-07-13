@@ -126,6 +126,7 @@ func DoFSWrapperTests(t *testing.T, b simpleblob.Interface) {
 	// Item has right content
 	var p []byte
 	p, err = io.ReadAll(f)
+	require.NoError(t, err)
 	assert.Equal(t, p, fooData)
 
 	// Check file info
