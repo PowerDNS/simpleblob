@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"sort"
 	"sync"
 	"time"
@@ -263,7 +264,9 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 		return nil, err
 	}
 
-	client.SetAppInfo("simpleblob", "0.1.1")
+	if info, ok := debug.ReadBuildInfo(); ok {
+		client.SetAppInfo("simpleblob", info.Main.Version)
+	}
 
 	if opt.CreateBucket {
 		// Create bucket if it does not exist
