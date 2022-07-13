@@ -101,7 +101,8 @@ func DoFSWrapperTests(t *testing.T, b simpleblob.Interface) {
 	fooData := make([]byte, 64)
 	_, err = rand.Read(fooData)
 	require.NoError(t, err)
-	b.Store(ctx, "foo", fooData) // error is ignored, Store is tested above
+	err = b.Store(ctx, "foo", fooData)
+	require.NoError(t, err)
 
 	// Item isn't listed when prefix is bad
 	ls, err = fs.Glob(fsys, "bar")
@@ -123,7 +124,8 @@ func DoFSWrapperTests(t *testing.T, b simpleblob.Interface) {
 	}()
 
 	// Item has right content
-	p, err := io.ReadAll(f)
+	var p []byte
+	p, err = io.ReadAll(f)
 	assert.Equal(t, p, fooData)
 
 	// Check file info
