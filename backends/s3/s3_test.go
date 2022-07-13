@@ -65,7 +65,8 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 			}
 		}
 		// This one is not returned by the List command
-    		b.client.RemoveObject(ctx, b.opt.Bucket, UpdateMarkerFilename, minio.RemoveObjectOptions{})
+    		err = b.client.RemoveObject(ctx, b.opt.Bucket, UpdateMarkerFilename, minio.RemoveObjectOptions{})
+		require.NoError(t, err)
 	}
 	t.Cleanup(cleanup)
 	cleanup()
