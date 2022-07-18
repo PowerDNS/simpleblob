@@ -79,7 +79,10 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 }
 
 func (b *Backend) Delete(ctx context.Context, name string) error {
-    return os.Remove(filepath.Join(b.rootPath, name))
+	if !allowedName(name) {
+		return os.ErrPermission
+	}
+	return os.Remove(filepath.Join(b.rootPath, name))
 }
 
 func allowedName(name string) bool {
