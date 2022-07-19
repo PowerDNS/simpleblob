@@ -141,19 +141,20 @@ func (bw *fsBlobWrapper) Stat() (fs.FileInfo, error) {
 }
 func (bw *fsBlobWrapper) Read(p []byte) (int, error) {
 	if bw.r == nil {
-		b, err := bw.parent.Interface.Load(context.TODO(), bw.b.Name)
+		b, err := bw.parent.Interface.Load(context.Background(), bw.b.Name)
 		if err != nil {
 			return 0, err
 		}
 		bw.r = bytes.NewReader(b)
 	}
-	n, err := bw.r.Read(p)
-	if err == io.EOF {
-    		bw.r = nil
-	}
-	return n, err
+	return bw.r.Read(p)
 }
-func (bw *fsBlobWrapper) Close() error { return nil }
+func (bw *fsBlobWrapper) Close() error {
+	if bw.r != nil {
+		bw.r = nil
+	}
+	return nil
+}
 
 // fs.DirEntry implementation
 
