@@ -84,11 +84,6 @@ func DoFSWrapperTests(t *testing.T, b simpleblob.Interface) {
 	// The backend is considered working from DoBackendTests.
 	fsys := simpleblob.AsFS(b)
 
-	// Filesystem is empty
-	ls, err := fs.Glob(fsys, "*")
-	assert.NoError(t, err)
-	assert.Len(t, ls, 0)
-
 	// Opening random thing fails
 	f, err := fsys.Open("something")
 	assert.Error(t, err)
@@ -103,17 +98,6 @@ func DoFSWrapperTests(t *testing.T, b simpleblob.Interface) {
 	require.NoError(t, err)
 	err = b.Store(ctx, "foo", fooData)
 	require.NoError(t, err)
-
-	// Item isn't listed when prefix is bad
-	ls, err = fs.Glob(fsys, "bar")
-	assert.NoError(t, err)
-	assert.Len(t, ls, 0)
-
-	// Item is listed
-	ls, err = fs.Glob(fsys, "*")
-	assert.NoError(t, err)
-	assert.Len(t, ls, 1)
-	assert.Contains(t, ls, "foo")
 
 	// Item can be loaded by name
 	f, err = fsys.Open("foo")
@@ -132,7 +116,7 @@ func DoFSWrapperTests(t *testing.T, b simpleblob.Interface) {
 	// Check file info
 	info, err := f.Stat()
 	assert.NoError(t, err)
-	assert.EqualValues(t, info.Mode(), 666)
+	assert.EqualValues(t, info.Mode(), 0777)
 	assert.Equal(t, info.Name(), "foo")
 	assert.EqualValues(t, info.Size(), 64)
 	assert.Equal(t, info.Sys(), fsys)
@@ -144,20 +128,4 @@ func DoFSWrapperTests(t *testing.T, b simpleblob.Interface) {
 	p2, err = fs.ReadFile(fsys, "foo")
 	assert.NoError(t, err)
 	assert.Equal(t, p, p2)
-
-	// fs.ReadDirFS is satisfied and allows only "." subdir
-	direntries, err := fs.ReadDir(fsys, "meh")
-	assert.Error(t, err)
-	assert.Nil(t, direntries)
-	direntries, err = fs.ReadDir(fsys, ".")
-	assert.NoError(t, err)
-	assert.Contains(t, direntries, f)
-
-	// fs.SubFS is satisfied and allows only "." subdir
-	subfsys, err := fs.Sub(fsys, "anything")
-	assert.Error(t, err)
-	assert.Nil(t, subfsys)
-	subfsys, err = fs.Sub(fsys, ".")
-	assert.NoError(t, err)
-	assert.Equal(t, fsys, subfsys)
 }
