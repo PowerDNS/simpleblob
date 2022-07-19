@@ -8,5 +8,4 @@ import (
 
 func TestBackend(t *testing.T) {
 	tester.DoBackendTests(t, New())
-	tester.DoFSWrapperTests(t, New())
 }

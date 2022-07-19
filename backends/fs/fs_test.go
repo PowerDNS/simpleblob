@@ -38,13 +38,3 @@ func TestBackend(t *testing.T) {
 	assert.NoError(t, err)
 	tester.DoBackendTests(t, b)
 }
-
-func TestFilesystem(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "simpleblob-test-")
-	assert.NoError(t, err)
-	t.Cleanup(cleanup(t, tmpDir))
-
-	b, err := New(Options{RootPath: tmpDir})
-	assert.NoError(t, err)
-	tester.DoFSWrapperTests(t, b)
-}
