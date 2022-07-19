@@ -41,16 +41,16 @@ func (stw *fsInterfaceWrapper) Open(name string) (fs.File, error) {
 
 // ReadDir satisfies fs.ReadDirFS
 func (stw *fsInterfaceWrapper) ReadDir(name string) ([]fs.DirEntry, error) {
-    ls, err := stw.List(stw.ctx, "")
-    if err != nil {
-        return nil, &fs.PathError{Op: "readdir", Path: name, Err: err}
-    }
-    ret := make([]fs.DirEntry, len(ls))
-    for i, entry := range ls {
-        blob := entry
-        ret[i] = &fsBlobWrapper{&blob, stw, nil}
-    }
-    return ret, nil
+	ls, err := stw.List(stw.ctx, "")
+	if err != nil {
+		return nil, &fs.PathError{Op: "readdir", Path: name, Err: err}
+	}
+	ret := make([]fs.DirEntry, len(ls))
+	for i, entry := range ls {
+		blob := entry
+		ret[i] = &fsBlobWrapper{&blob, stw, nil}
+	}
+	return ret, nil
 }
 
 // ReadFile implements fs.ReadFileFS on top of an Interface wrapped as a fs.FS.
