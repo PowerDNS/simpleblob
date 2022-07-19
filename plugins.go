@@ -20,7 +20,7 @@ type Interface interface {
 	Load(ctx context.Context, name string) ([]byte, error)
 	// Store sends value to storage for a given name. 
 	Store(ctx context.Context, name string, data []byte) error
-	// Delete entry, identified by name, from storage
+	// Delete entry, identified by name, from storage. No error is returned if it does not exist.
 	Delete(ctx context.Context, name string) error
 }
 
