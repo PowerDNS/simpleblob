@@ -129,7 +129,7 @@ func (stw *fsInterfaceWrapper) Sub(dir string) (fs.FS, error) {
 
 func (*fsBlobWrapper) IsDir() bool         { return false }
 func (*fsBlobWrapper) ModTime() time.Time  { return time.Time{} }
-func (*fsBlobWrapper) Mode() fs.FileMode   { return 666 }
+func (*fsBlobWrapper) Mode() fs.FileMode   { return 0666 }
 func (bw *fsBlobWrapper) Name() string     { return bw.b.Name }
 func (bw *fsBlobWrapper) Sys() interface{} { return bw.parent }
 func (bw *fsBlobWrapper) Size() int64      { return bw.b.Size }
