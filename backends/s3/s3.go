@@ -230,12 +230,7 @@ func (b *Backend) Delete(ctx context.Context, name string) error {
 
 	bu, k := aws.String(b.opt.Bucket), aws.String(name)
 
-	// Check presence of name in backend
-	_, err := b.client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: bu, Key: k})
-	if err != nil && isResponseError(err, http.StatusNotFound) {
-		return os.ErrNotExist
-	}
-	_, err = b.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: bu, Key: k})
+	_, err := b.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: bu, Key: k})
 	if err != nil {
 		metricCallErrors.WithLabelValues("delete").Inc()
 	}

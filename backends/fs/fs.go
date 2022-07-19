@@ -82,7 +82,11 @@ func (b *Backend) Delete(ctx context.Context, name string) error {
 	if !allowedName(name) {
 		return os.ErrPermission
 	}
-	return os.Remove(filepath.Join(b.rootPath, name))
+	err := os.Remove(filepath.Join(b.rootPath, name))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
 }
 
 func allowedName(name string) bool {

@@ -78,5 +78,5 @@ func DoBackendTests(t *testing.T, b simpleblob.Interface) {
 
 	// Delete non-existing
 	err = b.Delete(ctx, "foo-1")
-	assert.ErrorIs(t, err, os.ErrNotExist)
+	assert.NoError(t, err)
 }

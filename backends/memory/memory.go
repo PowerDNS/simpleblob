@@ -61,9 +61,6 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 func (b *Backend) Delete(ctx context.Context, name string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if _, ok := b.blobs[name]; !ok {
-    		return os.ErrNotExist
-	}
 	delete(b.blobs, name)
 	return nil
 }
