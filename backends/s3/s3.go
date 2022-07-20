@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"runtime/debug"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,7 +48,7 @@ type Options struct {
 	// CreateBucket tells us to try to create the bucket
 	CreateBucket bool `yaml:"create_bucket"`
 
-	// EndpointURL can be set to something like "localhost:9000" when using Minio
+	// EndpointURL can be set to something like "http://localhost:9000" when using Minio
 	// or "s3.amazonaws.com" for AWS S3.
 	EndpointURL string `yaml:"endpoint_url"`
 
@@ -252,14 +254,35 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	ctx, cancel := context.WithTimeout(ctx, opt.InitTimeout)
 	defer cancel()
 
+	// Minio takes only the Host value as the endpoint URL.
+	// The connection being secure depends on a key in minio.Option.
+	u, err := url.Parse(opt.EndpointURL)
+	if err != nil {
+		return nil, err
+	}
+	var useSSL bool
+	switch u.Scheme {
+	case "http":
+		// Ok, no SSL
+	case "https":
+		useSSL = true
+	default:
+		return nil, fmt.Errorf("Unsupported scheme for S3: '%s'", u.Scheme)
+	}
+
 	cfg := &minio.Options{
-		Creds: credentials.NewStaticV4(opt.AccessKey, opt.SecretKey, ""),
-		//Secure:    true,
+		Creds:     credentials.NewStaticV4(opt.AccessKey, opt.SecretKey, ""),
+		Secure:    useSSL,
 		Transport: hc.Transport,
 		Region:    opt.Region,
 	}
 
-	client, err := minio.New(opt.EndpointURL, cfg)
+	// Remove scheme from URL.
+	// Leave remaining validation to Minio client.
+	endpoint := opt.EndpointURL[len(u.Scheme)+1:] // Remove scheme and colon
+	endpoint = strings.TrimLeft(endpoint, "/") // Remove slashes if any
+
+	client, err := minio.New(endpoint, cfg)
 	if err != nil {
 		return nil, err
 	}
