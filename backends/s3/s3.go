@@ -209,6 +209,17 @@ func (b *Backend) doStore(ctx context.Context, name string, data []byte) error {
 	return err
 }
 
+func (b *Backend) Delete(ctx context.Context, name string) error {
+	metricCalls.WithLabelValues("delete").Inc()
+	metricLastCallTimestamp.WithLabelValues("delete").SetToCurrentTime()
+
+	err := b.client.RemoveObject(ctx, b.opt.Bucket, name, minio.RemoveObjectOptions{})
+	if err = handleErrorResponse(err); err != nil {
+		metricCallErrors.WithLabelValues("delete").Inc()
+	}
+	return err
+}
+
 func New(ctx context.Context, opt Options) (*Backend, error) {
 	if opt.Region == "" {
 		opt.Region = DefaultRegion
