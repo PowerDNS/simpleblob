@@ -142,4 +142,12 @@ func DoBackendTests(t *testing.T, b simpleblob.Interface) {
 	datar, err = fs.ReadFile(fsys, "does-not-exist-either")
 	assert.Error(t, err)
 	assert.Empty(t, datar)
+
+	// Delete existing
+	err = b.Delete(ctx, "foo-1")
+	assert.NoError(t, err)
+
+	// Delete non-existing
+	err = b.Delete(ctx, "foo-1")
+	assert.NoError(t, err)
 }

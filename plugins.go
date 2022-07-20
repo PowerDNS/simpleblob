@@ -14,10 +14,14 @@ import (
 // If you want to provide additional features, you can define additional
 // optional interfaces that a backend can implement.
 type Interface interface {
+	// List retrieves a BlobList with given prefix.
 	List(ctx context.Context, prefix string) (BlobList, error)
+	// Load brings a whole value, chosen by name, into memory.
 	Load(ctx context.Context, name string) ([]byte, error)
+	// Store sends value to storage for a given name. 
 	Store(ctx context.Context, name string, data []byte) error
-	// FIXME: add Delete and document each method
+	// Delete entry, identified by name, from storage. No error is returned if it does not exist.
+	Delete(ctx context.Context, name string) error
 }
 
 // InitFunc is the type for the backend constructor function used to register
