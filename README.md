@@ -17,10 +17,9 @@ type Interface interface {
 	List(ctx context.Context, prefix string) (BlobList, error)
 	Load(ctx context.Context, name string) ([]byte, error)
 	Store(ctx context.Context, name string, data []byte) error
+	Delete(ctx context.Context, name string) error
 }
 ```
-
-We plan to extend this with a `Delete` before 1.0.
 
 To instantiate a backend, `_`-import all the backends that you want to register, and call:
 
