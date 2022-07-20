@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"runtime/debug"
@@ -176,13 +177,11 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 		return nil, os.ErrNotExist
 	}
 
-	var buf bytes.Buffer
-	if _, err = buf.ReadFrom(obj); err != nil {
-		if err = handleErrorResponse(err); err != nil {
-			return nil, err
-		}
+	p, err := io.ReadAll(obj)
+	if err = handleErrorResponse(err); err != nil {
+		return nil, err
 	}
-	return buf.Bytes(), nil
+	return p, nil
 }
 
 func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
