@@ -7,8 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/minio/minio-go/v7"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
@@ -60,19 +59,14 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 			return
 		}
 		for _, blob := range blobs {
-			_, err := b.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-				Bucket: aws.String(b.opt.Bucket),
-				Key:    aws.String(blob.Name),
-			})
+    			err := b.client.RemoveObject(ctx, b.opt.Bucket, blob.Name, minio.RemoveObjectOptions{})
 			if err != nil {
 				t.Logf("Object delete error: %s", err)
 			}
 		}
 		// This one is not returned by the List command
-		_, _ = b.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-			Bucket: aws.String(b.opt.Bucket),
-			Key:    aws.String(UpdateMarkerFilename),
-		})
+    		err = b.client.RemoveObject(ctx, b.opt.Bucket, UpdateMarkerFilename, minio.RemoveObjectOptions{})
+		require.NoError(t, err)
 	}
 	t.Cleanup(cleanup)
 	cleanup()
