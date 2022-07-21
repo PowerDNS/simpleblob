@@ -276,8 +276,10 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 		// Ok, no SSL
 	case "https":
 		useSSL = true
+	case "":
+		return nil, fmt.Errorf("No scheme provided for endpoint URL '%s', use http or https.", opt.EndpointURL)
 	default:
-		return nil, fmt.Errorf("Unsupported scheme for S3: '%s'", u.Scheme)
+		return nil, fmt.Errorf("Unsupported scheme for S3: '%s', use http or https.", u.Scheme)
 	}
 
 	cfg := &minio.Options{
