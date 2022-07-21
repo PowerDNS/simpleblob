@@ -23,7 +23,7 @@ import (
 const (
 	// DefaultEndpointURL is the default S3 endpoint to use if none is set.
 	// Here, no custom endpoint assumes AWS endpoint.
-	DefaultEndpointURL = "s3.amazonaws.com"
+	DefaultEndpointURL = "https://s3.amazonaws.com"
 	// DefaultRegion is the default S3 region to use, if none is configured
 	DefaultRegion = "us-east-1"
 	// DefaultInitTimeout is the time we allow for initialisation, like credential
@@ -50,7 +50,7 @@ type Options struct {
 	CreateBucket bool `yaml:"create_bucket"`
 
 	// EndpointURL can be set to something like "http://localhost:9000" when using Minio
-	// or "s3.amazonaws.com" for AWS S3.
+	// or "https://s3.amazonaws.com" for AWS S3.
 	EndpointURL string `yaml:"endpoint_url"`
 
 	// TLS allows customising the TLS configuration
