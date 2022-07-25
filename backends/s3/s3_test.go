@@ -53,8 +53,8 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 	require.NoError(t, err)
 
 	cleanup := func() {
-    		ctx, cancel := context.WithCancel(context.Background())
-    		defer cancel()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 
 		blobs, err := b.doList(ctx, "")
 		if err != nil {
@@ -62,13 +62,13 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 			return
 		}
 		for _, blob := range blobs {
-    			err := b.client.RemoveObject(ctx, b.opt.Bucket, blob.Name, minio.RemoveObjectOptions{})
+			err := b.client.RemoveObject(ctx, b.opt.Bucket, blob.Name, minio.RemoveObjectOptions{})
 			if err != nil {
 				t.Logf("Object delete error: %s", err)
 			}
 		}
 		// This one is not returned by the List command
-    		err = b.client.RemoveObject(ctx, b.opt.Bucket, UpdateMarkerFilename, minio.RemoveObjectOptions{})
+		err = b.client.RemoveObject(ctx, b.opt.Bucket, UpdateMarkerFilename, minio.RemoveObjectOptions{})
 		require.NoError(t, err)
 	}
 	t.Cleanup(cleanup)
