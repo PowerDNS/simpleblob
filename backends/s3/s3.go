@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/PowerDNS/go-tlsconfig"
-	minio "github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	"github.com/PowerDNS/simpleblob"
@@ -344,7 +344,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	// Remove scheme from URL.
 	// Leave remaining validation to Minio client.
 	endpoint := opt.EndpointURL[len(u.Scheme)+1:] // Remove scheme and colon
-	endpoint = strings.TrimLeft(endpoint, "/") // Remove slashes if any
+	endpoint = strings.TrimLeft(endpoint, "/")    // Remove slashes if any
 
 	client, err := minio.New(endpoint, cfg)
 	if err != nil {
