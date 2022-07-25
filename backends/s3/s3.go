@@ -64,7 +64,7 @@ type Options struct {
 
 	// UseUpdateMarker makes the backend write and read a file to determine if
 	// it can cache the last List command. The file contains the name of the
-	// last file stored.
+	// last file stored or deleted.
 	// This can reduce the number of LIST commands sent to S3, replacing them
 	// with GET commands that are about 12x cheaper.
 	// If enabled, it MUST be enabled on all instances!
@@ -183,9 +183,39 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 		return err
 	}
 	if b.opt.UseUpdateMarker {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+
+		// Update cache
+		go func() {
+			defer wg.Done()
+			// Update size or add to local list if not present
+			l := b.lastList.Len()
+			idx := sort.Search(l, func(i int) bool { return b.lastList[i].Name >= name })
+			blob := simpleblob.Blob{Name: name, Size: int64(len(data))}
+			if idx < l {
+				if b.lastList[idx].Name == name {
+					b.lastList[idx].Size = int64(len(data))
+				} else {
+					b.lastList = append(b.lastList, simpleblob.Blob{})
+					copy(b.lastList[idx+1:], b.lastList[idx:])
+					b.lastList[idx] = blob
+				}
+			} else {
+				b.lastList = append(b.lastList, blob)
+			}
+
+			b.lastMarker = name
+		}()
+
 		if err := b.doStore(ctx, UpdateMarkerFilename, []byte(name)); err != nil {
 			return err
 		}
+
+		wg.Wait()
 	}
 	return nil
 }
@@ -210,6 +240,34 @@ func (b *Backend) Delete(ctx context.Context, name string) error {
 	err := b.client.RemoveObject(ctx, b.opt.Bucket, name, minio.RemoveObjectOptions{})
 	if err = handleErrorResponse(err); err != nil {
 		metricCallErrors.WithLabelValues("delete").Inc()
+	}
+	if b.opt.UseUpdateMarker {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+			// Update cached list values
+			// This keeps sorted order, so no need to sort again
+			l := b.lastList.Len()
+			idx := sort.Search(l, func(i int) bool { return b.lastList[i].Name == name })
+			if idx < l && b.lastList[idx].Name == name {
+				b.lastList = b.lastList[:idx]
+				if idx < l-2 {
+					b.lastList = append(b.lastList, b.lastList[idx+1:]...)
+				}
+			}
+			b.lastMarker = name
+		}()
+
+		if err := b.doStore(ctx, UpdateMarkerFilename, []byte(name)); err != nil {
+			return err
+		}
+
+		wg.Wait()
 	}
 	return err
 }
