@@ -108,37 +108,31 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 		return b.doList(ctx, prefix)
 	}
 
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	// Request and cache full list, and use marker file to invalidate the cache
-	now := time.Now()
 	data, err := b.Load(ctx, UpdateMarkerFilename)
-	if err != nil && !os.IsNotExist(err) {
-		return nil, err
+	exists := true
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, err
+		}
+		exists = false
 	}
 	current := string(data)
 
-	b.mu.Lock()
-	lastMarker := b.lastMarker
-	age := now.Sub(b.lastTime)
-	b.mu.Unlock()
-
-	var blobs simpleblob.BlobList
-	if current != lastMarker || age >= b.opt.UpdateMarkerForceListInterval {
+	if !exists || b.lastMarker == "" || current != b.lastMarker || time.Since(b.lastTime) >= b.opt.UpdateMarkerForceListInterval {
 		// Update cache
-		blobs, err = b.doList(ctx, "") // all, no prefix
+		blobs, err := b.doList(ctx, "") // all, no prefix
 		if err != nil {
 			return nil, err
 		}
-
-		b.mu.Lock()
 		b.lastMarker = current
 		b.lastList = blobs
-		b.mu.Unlock()
-	} else {
-		b.mu.Lock()
-		blobs = b.lastList
-		b.mu.Unlock()
+		b.lastTime = time.Now()
 	}
-	return blobs.WithPrefix(prefix), nil
+	return b.lastList.WithPrefix(prefix), nil
 }
 
 func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobList, error) {
