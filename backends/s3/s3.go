@@ -108,9 +108,6 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 		return b.doList(ctx, prefix)
 	}
 
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	// Request and cache full list, and use marker file to invalidate the cache
 	data, err := b.Load(ctx, UpdateMarkerFilename)
 	exists := true
@@ -128,9 +125,11 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 		if err != nil {
 			return nil, err
 		}
+		b.mu.Lock()
 		b.lastMarker = current
 		b.lastList = blobs
 		b.lastTime = time.Now()
+		b.mu.Unlock()
 	}
 	return b.lastList.WithPrefix(prefix), nil
 }
@@ -183,9 +182,6 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 		return err
 	}
 	if b.opt.UseUpdateMarker {
-		b.mu.Lock()
-		defer b.mu.Unlock()
-
 		var wg sync.WaitGroup
 		wg.Add(1)
 
@@ -196,6 +192,7 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 			l := b.lastList.Len()
 			idx := sort.Search(l, func(i int) bool { return b.lastList[i].Name >= name })
 			blob := simpleblob.Blob{Name: name, Size: int64(len(data))}
+			b.mu.Lock()
 			if idx < l {
 				if b.lastList[idx].Name == name {
 					b.lastList[idx].Size = int64(len(data))
@@ -209,6 +206,7 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 			}
 
 			b.lastMarker = name
+			b.mu.Unlock()
 		}()
 
 		if err := b.doStore(ctx, UpdateMarkerFilename, []byte(name)); err != nil {
@@ -242,9 +240,6 @@ func (b *Backend) Delete(ctx context.Context, name string) error {
 		metricCallErrors.WithLabelValues("delete").Inc()
 	}
 	if b.opt.UseUpdateMarker {
-		b.mu.Lock()
-		defer b.mu.Unlock()
-
 		var wg sync.WaitGroup
 		wg.Add(1)
 
@@ -254,6 +249,7 @@ func (b *Backend) Delete(ctx context.Context, name string) error {
 			// This keeps sorted order, so no need to sort again
 			l := b.lastList.Len()
 			idx := sort.Search(l, func(i int) bool { return b.lastList[i].Name == name })
+			b.mu.Lock()
 			if idx < l && b.lastList[idx].Name == name {
 				b.lastList = b.lastList[:idx]
 				if idx < l-2 {
@@ -261,6 +257,7 @@ func (b *Backend) Delete(ctx context.Context, name string) error {
 				}
 			}
 			b.lastMarker = name
+			b.mu.Unlock()
 		}()
 
 		if err := b.doStore(ctx, UpdateMarkerFilename, []byte(name)); err != nil {
