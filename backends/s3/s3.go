@@ -323,6 +323,27 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	return b, nil
 }
 
+// NewReader satisfies ReaderStorage and provides an optimized, streamed way
+// to fetch a blob from S3 server.
+func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, error) {
+	obj, err := b.client.GetObject(ctx, b.opt.Bucket, name, minio.GetObjectOptions{})
+	if err = handleErrorResponse(err); err != nil {
+		return nil, err
+	}
+	if obj == nil {
+		return nil, os.ErrNotExist
+	}
+
+	info, err := obj.Stat()
+	if err = handleErrorResponse(err); err != nil {
+		return nil, err
+	}
+	if info.Key != name {
+		return nil, os.ErrNotExist
+	}
+	return obj, nil
+}
+
 // handleErrorResponse takes an error, possibly a minio.ErrorResponse
 // and turns it into a well known error when possible.
 // If error is not well known, it is returned as is.
