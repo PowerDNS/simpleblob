@@ -2,6 +2,7 @@ package tester
 
 import (
 	"context"
+	"io"
 	"os"
 	"testing"
 
@@ -51,6 +52,14 @@ func DoBackendTests(t *testing.T, b simpleblob.Interface) {
 	assert.NoError(t, err)
 	assert.Equal(t, data, []byte("foo"))
 
+	// Reader should get the same data as Load
+	r, err := simpleblob.NewReader(ctx, b, "foo-1")
+	assert.NoError(t, err)
+	p, err := io.ReadAll(r)
+	assert.NoError(t, err)
+	assert.Equal(t, data, p)
+	assert.NoError(t, r.Close())
+
 	// Check overwritten data
 	data, err = b.Load(ctx, "bar-1")
 	assert.NoError(t, err)
@@ -68,9 +77,26 @@ func DoBackendTests(t *testing.T, b simpleblob.Interface) {
 	assert.NoError(t, err)
 	assert.Equal(t, data, []byte("foo"))
 
+	// Writer stores data
+	w, err := simpleblob.NewWriter(ctx, b, "fizz")
+	assert.NoError(t, err)
+	assert.NotNil(t, w)
+	buzz := []byte("buzz")
+	n, err := w.Write(buzz)
+	assert.NoError(t, err)
+	assert.NoError(t, w.Close())
+	assert.EqualValues(t, len(buzz), n)
+	data, err = b.Load(ctx, "fizz")
+	assert.NoError(t, err)
+	assert.Equal(t, buzz, data)
+
 	// Load non-existing
 	_, err = b.Load(ctx, "does-not-exist")
 	assert.ErrorIs(t, err, os.ErrNotExist)
+	// With Reader
+	r, err = simpleblob.NewReader(ctx, b, "does-not-exist")
+	assert.ErrorIs(t, err, os.ErrNotExist)
+	assert.Nil(t, r)
 
 	// Delete existing
 	err = b.Delete(ctx, "foo-1")
