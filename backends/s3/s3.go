@@ -119,9 +119,15 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 	}
 	current := string(data)
 
-	if !exists || b.lastMarker == "" || current != b.lastMarker || time.Since(b.lastTime) >= b.opt.UpdateMarkerForceListInterval {
-		// Update cache
-		blobs, err := b.doList(ctx, "") // all, no prefix
+	b.mu.Lock()
+	shouldUpdate := b.lastList == nil || b.lastMarker != current ||
+		time.Since(b.lastTime) >= b.opt.UpdateMarkerForceListInterval ||
+		!exists
+	blobs := b.lastList
+	b.mu.Unlock()
+
+	if shouldUpdate {
+		blobs, err = b.doList(ctx, "") // all, no prefix
 		if err != nil {
 			return nil, err
 		}
@@ -131,7 +137,8 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 		b.lastTime = time.Now()
 		b.mu.Unlock()
 	}
-	return b.lastList.WithPrefix(prefix), nil
+
+	return blobs.WithPrefix(prefix), nil
 }
 
 func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobList, error) {
@@ -182,38 +189,13 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 		return err
 	}
 	if b.opt.UseUpdateMarker {
-		var wg sync.WaitGroup
-		wg.Add(1)
-
-		// Update cache
-		go func() {
-			defer wg.Done()
-			// Update size or add to local list if not present
-			l := b.lastList.Len()
-			idx := sort.Search(l, func(i int) bool { return b.lastList[i].Name >= name })
-			blob := simpleblob.Blob{Name: name, Size: int64(len(data))}
-			b.mu.Lock()
-			if idx < l {
-				if b.lastList[idx].Name == name {
-					b.lastList[idx].Size = int64(len(data))
-				} else {
-					b.lastList = append(b.lastList, simpleblob.Blob{})
-					copy(b.lastList[idx+1:], b.lastList[idx:])
-					b.lastList[idx] = blob
-				}
-			} else {
-				b.lastList = append(b.lastList, blob)
-			}
-
-			b.lastMarker = name
-			b.mu.Unlock()
-		}()
-
 		if err := b.doStore(ctx, UpdateMarkerFilename, []byte(name)); err != nil {
 			return err
 		}
-
-		wg.Wait()
+		b.mu.Lock()
+		b.lastList = nil
+		b.lastMarker = name
+		b.mu.Unlock()
 	}
 	return nil
 }
@@ -240,31 +222,13 @@ func (b *Backend) Delete(ctx context.Context, name string) error {
 		metricCallErrors.WithLabelValues("delete").Inc()
 	}
 	if b.opt.UseUpdateMarker {
-		var wg sync.WaitGroup
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-			// Update cached list values
-			// This keeps sorted order, so no need to sort again
-			l := b.lastList.Len()
-			idx := sort.Search(l, func(i int) bool { return b.lastList[i].Name == name })
-			b.mu.Lock()
-			if idx < l && b.lastList[idx].Name == name {
-				b.lastList = b.lastList[:idx]
-				if idx < l-2 {
-					b.lastList = append(b.lastList, b.lastList[idx+1:]...)
-				}
-			}
-			b.lastMarker = name
-			b.mu.Unlock()
-		}()
-
 		if err := b.doStore(ctx, UpdateMarkerFilename, []byte(name)); err != nil {
 			return err
 		}
-
-		wg.Wait()
+		b.mu.Lock()
+		b.lastList = nil
+		b.lastMarker = name
+		b.mu.Unlock()
 	}
 	return err
 }
