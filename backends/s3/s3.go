@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/PowerDNS/go-tlsconfig"
-	minio "github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	"github.com/PowerDNS/simpleblob"
@@ -23,7 +23,7 @@ import (
 const (
 	// DefaultEndpointURL is the default S3 endpoint to use if none is set.
 	// Here, no custom endpoint assumes AWS endpoint.
-	DefaultEndpointURL = "s3.amazonaws.com"
+	DefaultEndpointURL = "https://s3.amazonaws.com"
 	// DefaultRegion is the default S3 region to use, if none is configured
 	DefaultRegion = "us-east-1"
 	// DefaultInitTimeout is the time we allow for initialisation, like credential
@@ -50,7 +50,7 @@ type Options struct {
 	CreateBucket bool `yaml:"create_bucket"`
 
 	// EndpointURL can be set to something like "http://localhost:9000" when using Minio
-	// or "s3.amazonaws.com" for AWS S3.
+	// or "https://s3.amazonaws.com" for AWS S3.
 	EndpointURL string `yaml:"endpoint_url"`
 
 	// TLS allows customising the TLS configuration
@@ -64,7 +64,7 @@ type Options struct {
 
 	// UseUpdateMarker makes the backend write and read a file to determine if
 	// it can cache the last List command. The file contains the name of the
-	// last file stored.
+	// last file stored or deleted.
 	// This can reduce the number of LIST commands sent to S3, replacing them
 	// with GET commands that are about 12x cheaper.
 	// If enabled, it MUST be enabled on all instances!
@@ -109,35 +109,35 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 	}
 
 	// Request and cache full list, and use marker file to invalidate the cache
-	now := time.Now()
 	data, err := b.Load(ctx, UpdateMarkerFilename)
-	if err != nil && !os.IsNotExist(err) {
-		return nil, err
+	exists := true
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, err
+		}
+		exists = false
 	}
 	current := string(data)
 
 	b.mu.Lock()
-	lastMarker := b.lastMarker
-	age := now.Sub(b.lastTime)
+	shouldUpdate := b.lastList == nil || b.lastMarker != current ||
+		time.Since(b.lastTime) >= b.opt.UpdateMarkerForceListInterval ||
+		!exists
+	blobs := b.lastList
 	b.mu.Unlock()
 
-	var blobs simpleblob.BlobList
-	if current != lastMarker || age >= b.opt.UpdateMarkerForceListInterval {
-		// Update cache
+	if shouldUpdate {
 		blobs, err = b.doList(ctx, "") // all, no prefix
 		if err != nil {
 			return nil, err
 		}
-
 		b.mu.Lock()
 		b.lastMarker = current
 		b.lastList = blobs
-		b.mu.Unlock()
-	} else {
-		b.mu.Lock()
-		blobs = b.lastList
+		b.lastTime = time.Now()
 		b.mu.Unlock()
 	}
+
 	return blobs.WithPrefix(prefix), nil
 }
 
@@ -192,6 +192,10 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 		if err := b.doStore(ctx, UpdateMarkerFilename, []byte(name)); err != nil {
 			return err
 		}
+		b.mu.Lock()
+		b.lastList = nil
+		b.lastMarker = name
+		b.mu.Unlock()
 	}
 	return nil
 }
@@ -216,6 +220,15 @@ func (b *Backend) Delete(ctx context.Context, name string) error {
 	err := b.client.RemoveObject(ctx, b.opt.Bucket, name, minio.RemoveObjectOptions{})
 	if err = handleErrorResponse(err); err != nil {
 		metricCallErrors.WithLabelValues("delete").Inc()
+	}
+	if b.opt.UseUpdateMarker {
+		if err := b.doStore(ctx, UpdateMarkerFilename, []byte(name)); err != nil {
+			return err
+		}
+		b.mu.Lock()
+		b.lastList = nil
+		b.lastMarker = name
+		b.mu.Unlock()
 	}
 	return err
 }
@@ -276,8 +289,10 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 		// Ok, no SSL
 	case "https":
 		useSSL = true
+	case "":
+		return nil, fmt.Errorf("No scheme provided for endpoint URL '%s', use http or https.", opt.EndpointURL)
 	default:
-		return nil, fmt.Errorf("Unsupported scheme for S3: '%s'", u.Scheme)
+		return nil, fmt.Errorf("Unsupported scheme for S3: '%s', use http or https.", u.Scheme)
 	}
 
 	cfg := &minio.Options{
@@ -290,7 +305,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	// Remove scheme from URL.
 	// Leave remaining validation to Minio client.
 	endpoint := opt.EndpointURL[len(u.Scheme)+1:] // Remove scheme and colon
-	endpoint = strings.TrimLeft(endpoint, "/") // Remove slashes if any
+	endpoint = strings.TrimLeft(endpoint, "/")    // Remove slashes if any
 
 	client, err := minio.New(endpoint, cfg)
 	if err != nil {

@@ -53,19 +53,22 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 	require.NoError(t, err)
 
 	cleanup := func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
 		blobs, err := b.doList(ctx, "")
 		if err != nil {
 			t.Logf("Blobs list error: %s", err)
 			return
 		}
 		for _, blob := range blobs {
-    			err := b.client.RemoveObject(ctx, b.opt.Bucket, blob.Name, minio.RemoveObjectOptions{})
+			err := b.client.RemoveObject(ctx, b.opt.Bucket, blob.Name, minio.RemoveObjectOptions{})
 			if err != nil {
 				t.Logf("Object delete error: %s", err)
 			}
 		}
 		// This one is not returned by the List command
-    		err = b.client.RemoveObject(ctx, b.opt.Bucket, UpdateMarkerFilename, minio.RemoveObjectOptions{})
+		err = b.client.RemoveObject(ctx, b.opt.Bucket, UpdateMarkerFilename, minio.RemoveObjectOptions{})
 		require.NoError(t, err)
 	}
 	t.Cleanup(cleanup)
@@ -76,7 +79,7 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 
 func TestBackend(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	t.Cleanup(cancel)
+	defer cancel()
 
 	b := getBackend(ctx, t)
 	tester.DoBackendTests(t, b)
@@ -85,15 +88,15 @@ func TestBackend(t *testing.T) {
 
 func TestBackend_marker(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	t.Cleanup(cancel)
+	defer cancel()
 
 	b := getBackend(ctx, t)
 	b.opt.UseUpdateMarker = true
 
 	tester.DoBackendTests(t, b)
-	assert.Equal(t, "bar-1", b.lastMarker)
+	assert.Equal(t, "foo-1", b.lastMarker)
 
 	data, err := b.Load(ctx, UpdateMarkerFilename)
 	assert.NoError(t, err)
-	assert.Equal(t, "bar-1", string(data))
+	assert.Equal(t, b.lastMarker, string(data))
 }
