@@ -16,7 +16,7 @@ type ReaderStorage interface {
 	NewReader(context.Context, string) (io.ReadCloser, error)
 }
 
-// A ReaderStorage is an Interface providing an optimized way to create an io.WriteCloser.
+// A WriterStorage is an Interface providing an optimized way to create an io.WriteCloser.
 type WriterStorage interface {
 	Interface
 	// NewWriter returns an io.WriteCloser, allowing stream writing
