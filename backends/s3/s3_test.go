@@ -20,18 +20,17 @@ import (
 //
 // To run a Minio for this :
 //
-//     env MINIO_ROOT_USER=test MINIO_ROOT_PASSWORD=secret minio server /tmp/test-data/
+//	env MINIO_ROOT_USER=test MINIO_ROOT_PASSWORD=secret minio server /tmp/test-data/
 //
 // Example test config:
 //
-//     {
-//       "access_key": "test",
-//       "secret_key": "verysecret",
-//       "region": "us-east-1",
-//       "bucket": "test-bucket",
-//       "endpoint_url": "http://127.0.0.1:9000"
-//     }
-//
+//	{
+//	  "access_key": "test",
+//	  "secret_key": "verysecret",
+//	  "region": "us-east-1",
+//	  "bucket": "test-bucket",
+//	  "endpoint_url": "http://127.0.0.1:9000"
+//	}
 const TestConfigPathEnv = "SIMPLEBLOB_TEST_S3_CONFIG"
 
 func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
