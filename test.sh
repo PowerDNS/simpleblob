@@ -3,33 +3,41 @@
 set -e
 
 # Stop all child processes on exit
-trap "pkill -P $$" EXIT
+trap cleanup EXIT
+
+cleanup() {
+    pkill -P $$
+    if [ -d "$tmpdir" ]; then
+        rm -r "$tmpdir"
+    fi
+}
 
 export GOBIN="$PWD/bin"
+export PATH="$PATH:$GOBIN"
+tmpdir=
+
+mkdir -p "$GOBIN"
 
 if [ -z "$SIMPLEBLOB_TEST_S3_CONFIG" ]; then
     echo "* Using MinIO for S3 tests"
     export SIMPLEBLOB_TEST_S3_CONFIG="$PWD/test-minio.json"
 
-    # Check for existing minio
-    minio=$(which minio || true)
-
     # Fetch minio if not found
-    if [ -z "$minio" ]; then
-        #minioversion="github.com/minio/minio@v0.0.0-20220420232007-ddf84f8257c9"
-        #echo "+ go install $minioversion" > /dev/stderr
-        #go install "$minioversion"
+    if ! command -v minio >/dev/null; then
         source <(go env)
-        curl -v -o "$GOBIN/minio" "https://dl.min.io/server/minio/release/$GOOS-$GOARCH/minio"
-        minio=./bin/minio
-        chmod 6755 "$minio"
+        dst="$GOBIN/minio"
+        curl -v -o "$dst" "https://dl.min.io/server/minio/release/$GOOS-$GOARCH/minio"
+        chmod u+x "$dst"
     fi
 
     # Start MinIO
-    echo "* Starting $minio on port 34730"
-    tmpdir=$(mktemp -d -t minio.XXXXXX)
-    "$minio" server --address 127.0.0.1:34730 --console-address 127.0.0.1:34731 --quiet "$tmpdir" &
-    sleep 3
+    echo "* Starting minio at address 127.0.0.1:34730"
+    tmpdir=$(mktemp --directory --tmpdir=. .minio.XXXXXX)
+    minio server --address 127.0.0.1:34730 --console-address 127.0.0.1:34731 --quiet "$tmpdir" &
+    # Wait for minio server to be ready
+    while ! curl -s -I "127.0.0.1:34730/minio/health/ready" | grep '200 OK' >/dev/null; do
+        sleep .1
+    done
 fi
 
 echo "* SIMPLEBLOB_TEST_S3_CONFIG=$SIMPLEBLOB_TEST_S3_CONFIG"
@@ -39,6 +47,8 @@ set -ex
 go test -count=1 "$@" ./...
 
 # Configure linters in .golangci.yml
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.45.2
-./bin/golangci-lint run
+if ! command -v golangci-lint >/dev/null; then
+    go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.45.2
+fi
+golangci-lint run
 
