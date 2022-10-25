@@ -189,6 +189,7 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 		return err
 	}
 	if b.opt.UseUpdateMarker {
+    		b.lastMarker = name
 		if err := b.doStore(ctx, UpdateMarkerFilename, []byte(name)); err != nil {
 			return err
 		}
