@@ -2,7 +2,6 @@ package s3
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"testing"
 	"time"
@@ -42,7 +41,7 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 		return
 	}
 
-	cfgContents, err := ioutil.ReadFile(cfgPath)
+	cfgContents, err := os.ReadFile(cfgPath)
 	require.NoError(t, err)
 
 	var opt Options
