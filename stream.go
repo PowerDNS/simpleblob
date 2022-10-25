@@ -3,7 +3,9 @@ package simpleblob
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
+	"sync"
 )
 
 // A ReaderStorage is an Interface providing an optimized way to create an io.ReadCloser.
@@ -49,16 +51,38 @@ func NewReader(ctx context.Context, st Interface, name string) (io.ReadCloser, e
 // A writer wraps a backend to satisfy io.WriteCloser.
 // The bytes written to it are buffered, then sent to backend when closed.
 type writer struct {
-	st   Interface
-	ctx  context.Context
-	name string
-	*bytes.Buffer
+	st     Interface
+	ctx    context.Context
+	name   string
+	closed bool
+	buf    bytes.Buffer
+	mu     sync.Mutex
+}
+
+var errWClosed = errors.New("WriterStorage closed")
+
+// Write appends p to the data ready to be stored.
+//
+// Content will only be sent to backend when w.Close is called.
+func (w *writer) Write(p []byte) (int, error) {
+	mu.Lock()
+	defer mu.Unlock()
+	if w.closed {
+		return 0, errWClosed
+	}
+	return w.buf.Write(p)
 }
 
 // Close signifies operations on writer are over.
 // The file is sent to backend when called.
 func (w *writer) Close() error {
-	return w.st.Store(w.ctx, w.name, w.Bytes())
+	mu.Lock()
+	defer mu.Unlock()
+	if w.closed {
+		return errWClosed
+	}
+	w.closed = true
+	return w.st.Store(w.ctx, w.name, w.buf.Bytes())
 }
 
 // NewWriter returns an optimized io.WriteCloser for backend if available,
@@ -67,5 +91,9 @@ func NewWriter(ctx context.Context, st Interface, name string) (io.WriteCloser, 
 	if sst, ok := st.(WriterStorage); ok {
 		return sst.NewWriter(ctx, name)
 	}
-	return &writer{st, ctx, name, bytes.NewBuffer(nil)}, nil
+	return &writer{
+		st:   st,
+		ctx:  ctx,
+		name: name,
+	}, nil
 }
