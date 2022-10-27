@@ -6,7 +6,7 @@ require (
 	github.com/PowerDNS/go-tlsconfig v0.0.0-20201014142732-fe6ff56e2a95
 	github.com/minio/minio-go/v7 v7.0.30
 	github.com/prometheus/client_golang v1.12.0
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.8.1
 	gopkg.in/yaml.v2 v2.4.0
 )
 
@@ -45,5 +45,5 @@ require (
 	google.golang.org/protobuf v1.27.1 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
 	gopkg.in/ini.v1 v1.57.0 // indirect
-	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
