@@ -164,6 +164,8 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 	return blobs, nil
 }
 
+// Load retrieves the content of the object identified by name from S3 Bucket
+// configured in b.
 func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 	metricCalls.WithLabelValues("load").Inc()
 	metricLastCallTimestamp.WithLabelValues("load").SetToCurrentTime()
@@ -184,6 +186,8 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 	return p, nil
 }
 
+// Store sets the content of the object identified by name to the content
+// of data, in the S3 Bucket configured in b.
 func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 	if err := b.doStore(ctx, name, data); err != nil {
 		return err
@@ -204,6 +208,8 @@ func (b *Backend) doStore(ctx context.Context, name string, data []byte) error {
 	return err
 }
 
+// Delete removes the object identified by name from the S3 Bucket
+// configured in b.
 func (b *Backend) Delete(ctx context.Context, name string) error {
     	if err := b.doDelete(ctx, name); err != nil {
         	return err
