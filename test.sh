@@ -7,7 +7,7 @@ trap cleanup EXIT
 
 cleanup() {
     pkill -P $$
-    if [ -d "$tmpdir" ]; then
+    if [ -n "$tmpdir" ] && [ -d "$tmpdir" ]; then
         rm -r "$tmpdir"
     fi
 }
