@@ -188,17 +188,7 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 	if err := b.doStore(ctx, name, data); err != nil {
 		return err
 	}
-	if b.opt.UseUpdateMarker {
-    		b.lastMarker = name
-		if err := b.doStore(ctx, UpdateMarkerFilename, []byte(name)); err != nil {
-			return err
-		}
-		b.mu.Lock()
-		b.lastList = nil
-		b.lastMarker = name
-		b.mu.Unlock()
-	}
-	return nil
+	return b.setMarker(ctx, name)
 }
 
 func (b *Backend) doStore(ctx context.Context, name string, data []byte) error {
@@ -215,21 +205,19 @@ func (b *Backend) doStore(ctx context.Context, name string, data []byte) error {
 }
 
 func (b *Backend) Delete(ctx context.Context, name string) error {
+    	if err := b.doDelete(ctx, name); err != nil {
+        	return err
+    	}
+	return b.setMarker(ctx, name)
+}
+
+func (b *Backend) doDelete(ctx context.Context, name string) error {
 	metricCalls.WithLabelValues("delete").Inc()
 	metricLastCallTimestamp.WithLabelValues("delete").SetToCurrentTime()
 
 	err := b.client.RemoveObject(ctx, b.opt.Bucket, name, minio.RemoveObjectOptions{})
 	if err = handleErrorResponse(err); err != nil {
 		metricCallErrors.WithLabelValues("delete").Inc()
-	}
-	if b.opt.UseUpdateMarker {
-		if err := b.doStore(ctx, UpdateMarkerFilename, []byte(name)); err != nil {
-			return err
-		}
-		b.mu.Lock()
-		b.lastList = nil
-		b.lastMarker = name
-		b.mu.Unlock()
 	}
 	return err
 }
@@ -337,6 +325,23 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	}
 
 	return b, nil
+}
+
+// setMarker updates the upstream update marker with name.
+// In case the UseUpdateMarker option is false, this function doesn't do
+// anything and returns no error.
+func (b *Backend) setMarker(ctx context.Context, name string) error {
+	if !b.opt.UseUpdateMarker {
+		return nil
+	}
+	if err := b.doStore(ctx, UpdateMarkerFilename, []byte(name)); err != nil {
+		return err
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.lastList = nil
+	b.lastMarker = name
+	return nil
 }
 
 // handleErrorResponse takes an error, possibly a minio.ErrorResponse
