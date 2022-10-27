@@ -171,16 +171,14 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 	metricLastCallTimestamp.WithLabelValues("load").SetToCurrentTime()
 
 	obj, err := b.client.GetObject(ctx, b.opt.Bucket, name, minio.GetObjectOptions{})
-	if err != nil {
-		if err = handleErrorResponse(err); err != nil {
-			return nil, err
-		}
+	if err = convertMinioError(err); err != nil {
+		return nil, err
 	} else if obj == nil {
 		return nil, os.ErrNotExist
 	}
 
 	p, err := io.ReadAll(obj)
-	if err = handleErrorResponse(err); err != nil {
+	if err = convertMinioError(err); err != nil {
 		return nil, err
 	}
 	return p, nil
@@ -222,7 +220,7 @@ func (b *Backend) doDelete(ctx context.Context, name string) error {
 	metricLastCallTimestamp.WithLabelValues("delete").SetToCurrentTime()
 
 	err := b.client.RemoveObject(ctx, b.opt.Bucket, name, minio.RemoveObjectOptions{})
-	if err = handleErrorResponse(err); err != nil {
+	if err = convertMinioError(err); err != nil {
 		metricCallErrors.WithLabelValues("delete").Inc()
 	}
 	return err
@@ -318,7 +316,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 
 		err := client.MakeBucket(ctx, opt.Bucket, minio.MakeBucketOptions{Region: opt.Region})
 		if err != nil {
-			if err := handleErrorResponse(err); err != nil {
+			if err := convertMinioError(err); err != nil {
 				return nil, err
 			}
 		}
@@ -350,11 +348,14 @@ func (b *Backend) setMarker(ctx context.Context, name string) error {
 	return nil
 }
 
-// handleErrorResponse takes an error, possibly a minio.ErrorResponse
+// convertMinioError takes an error, possibly a minio.ErrorResponse
 // and turns it into a well known error when possible.
 // If error is not well known, it is returned as is.
 // If error is considered to be ignorable, nil is returned.
-func handleErrorResponse(err error) error {
+func convertMinioError(err error) error {
+	if err == nil {
+		return nil
+	}
 	errResp := minio.ToErrorResponse(err)
 	if errResp.StatusCode == 404 {
 		return os.ErrNotExist
