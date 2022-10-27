@@ -1,6 +1,7 @@
 package s3
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"testing"
@@ -92,9 +93,12 @@ func TestBackend_marker(t *testing.T) {
 	b.opt.UseUpdateMarker = true
 
 	tester.DoBackendTests(t, b)
-	assert.Equal(t, "foo-1", b.lastMarker)
 
-	data, err := b.Load(ctx, UpdateMarkerFilename)
+	markerFileContent, err := b.Load(ctx, UpdateMarkerFilename)
 	assert.NoError(t, err)
-	assert.Equal(t, b.lastMarker, string(data))
+	assert.True(t, bytes.HasPrefix(markerFileContent, []byte("foo-1")))
+
+	upMarker, err := b.getUpstreamMarker(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, b.lastMarker, upMarker)
 }

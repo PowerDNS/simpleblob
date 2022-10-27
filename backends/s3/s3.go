@@ -98,7 +98,7 @@ type Backend struct {
 	client *minio.Client
 
 	mu         sync.Mutex
-	lastMarker string
+	lastMarker string // ETag from last marker object write
 	lastList   simpleblob.BlobList
 	lastTime   time.Time
 }
@@ -108,35 +108,32 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 		return b.doList(ctx, prefix)
 	}
 
-	// Request and cache full list, and use marker file to invalidate the cache
-	data, err := b.Load(ctx, UpdateMarkerFilename)
-	exists := true
+	upstreamMarker, err := b.getUpstreamMarker(ctx)
 	if err != nil {
-		if !os.IsNotExist(err) {
-			return nil, err
-		}
-		exists = false
+    		return nil, err
 	}
-	current := string(data)
 
 	b.mu.Lock()
-	shouldUpdate := b.lastList == nil || b.lastMarker != current ||
-		time.Since(b.lastTime) >= b.opt.UpdateMarkerForceListInterval ||
-		!exists
+	mustUpdate := b.lastList == nil ||
+		upstreamMarker != b.lastMarker ||
+		time.Since(b.lastTime) >= b.opt.UpdateMarkerForceListInterval
 	blobs := b.lastList
 	b.mu.Unlock()
 
-	if shouldUpdate {
-		blobs, err = b.doList(ctx, "") // all, no prefix
-		if err != nil {
-			return nil, err
-		}
-		b.mu.Lock()
-		b.lastMarker = current
-		b.lastList = blobs
-		b.lastTime = time.Now()
-		b.mu.Unlock()
+	if !mustUpdate {
+		return blobs.WithPrefix(prefix), nil
 	}
+
+	blobs, err = b.doList(ctx, "") // We want to cache all, so no prefix
+	if err != nil {
+		return nil, err
+	}
+
+	b.mu.Lock()
+	b.lastMarker = upstreamMarker
+	b.lastList = blobs
+	b.lastTime = time.Now()
+	b.mu.Unlock()
 
 	return blobs.WithPrefix(prefix), nil
 }
@@ -187,32 +184,33 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 // Store sets the content of the object identified by name to the content
 // of data, in the S3 Bucket configured in b.
 func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
-	if err := b.doStore(ctx, name, data); err != nil {
+	info, err := b.doStore(ctx, name, data)
+	if err != nil {
 		return err
 	}
-	return b.setMarker(ctx, name)
+	return b.setMarker(ctx, name, info.ETag)
 }
 
-func (b *Backend) doStore(ctx context.Context, name string, data []byte) error {
+func (b *Backend) doStore(ctx context.Context, name string, data []byte) (*minio.UploadInfo, error) {
 	metricCalls.WithLabelValues("store").Inc()
 	metricLastCallTimestamp.WithLabelValues("store").SetToCurrentTime()
 
-	_, err := b.client.PutObject(ctx, b.opt.Bucket, name, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{
+	info, err := b.client.PutObject(ctx, b.opt.Bucket, name, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{
 		NumThreads: 3,
 	})
 	if err != nil {
 		metricCallErrors.WithLabelValues("store").Inc()
 	}
-	return err
+	return &info, err
 }
 
 // Delete removes the object identified by name from the S3 Bucket
 // configured in b.
 func (b *Backend) Delete(ctx context.Context, name string) error {
-    	if err := b.doDelete(ctx, name); err != nil {
-        	return err
-    	}
-	return b.setMarker(ctx, name)
+	if err := b.doDelete(ctx, name); err != nil {
+		return err
+	}
+	return b.setMarker(ctx, name, "")
 }
 
 func (b *Backend) doDelete(ctx context.Context, name string) error {
@@ -329,23 +327,6 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	}
 
 	return b, nil
-}
-
-// setMarker updates the upstream update marker with name.
-// In case the UseUpdateMarker option is false, this function doesn't do
-// anything and returns no error.
-func (b *Backend) setMarker(ctx context.Context, name string) error {
-	if !b.opt.UseUpdateMarker {
-		return nil
-	}
-	if err := b.doStore(ctx, UpdateMarkerFilename, []byte(name)); err != nil {
-		return err
-	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.lastList = nil
-	b.lastMarker = name
-	return nil
 }
 
 // convertMinioError takes an error, possibly a minio.ErrorResponse
