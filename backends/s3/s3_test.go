@@ -2,7 +2,6 @@ package s3
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"testing"
 	"time"
@@ -21,18 +20,17 @@ import (
 //
 // To run a Minio for this :
 //
-//     env MINIO_ROOT_USER=test MINIO_ROOT_PASSWORD=secret minio server /tmp/test-data/
+//	env MINIO_ROOT_USER=test MINIO_ROOT_PASSWORD=secret minio server /tmp/test-data/
 //
 // Example test config:
 //
-//     {
-//       "access_key": "test",
-//       "secret_key": "verysecret",
-//       "region": "us-east-1",
-//       "bucket": "test-bucket",
-//       "endpoint_url": "http://127.0.0.1:9000"
-//     }
-//
+//	{
+//	  "access_key": "test",
+//	  "secret_key": "verysecret",
+//	  "region": "us-east-1",
+//	  "bucket": "test-bucket",
+//	  "endpoint_url": "http://127.0.0.1:9000"
+//	}
 const TestConfigPathEnv = "SIMPLEBLOB_TEST_S3_CONFIG"
 
 func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
@@ -42,7 +40,7 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 		return
 	}
 
-	cfgContents, err := ioutil.ReadFile(cfgPath)
+	cfgContents, err := os.ReadFile(cfgPath)
 	require.NoError(t, err)
 
 	var opt Options
@@ -59,13 +57,13 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 			return
 		}
 		for _, blob := range blobs {
-    			err := b.client.RemoveObject(ctx, b.opt.Bucket, blob.Name, minio.RemoveObjectOptions{})
+			err := b.client.RemoveObject(ctx, b.opt.Bucket, blob.Name, minio.RemoveObjectOptions{})
 			if err != nil {
 				t.Logf("Object delete error: %s", err)
 			}
 		}
 		// This one is not returned by the List command
-    		err = b.client.RemoveObject(ctx, b.opt.Bucket, UpdateMarkerFilename, minio.RemoveObjectOptions{})
+		err = b.client.RemoveObject(ctx, b.opt.Bucket, UpdateMarkerFilename, minio.RemoveObjectOptions{})
 		require.NoError(t, err)
 	}
 	t.Cleanup(cleanup)
