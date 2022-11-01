@@ -39,6 +39,6 @@ set -ex
 go test -count=1 "$@" ./...
 
 # Configure linters in .golangci.yml
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.45.2
+go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.50.1
 ./bin/golangci-lint run
 
