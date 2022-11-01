@@ -1,9 +1,10 @@
 module github.com/PowerDNS/simpleblob
 
-go 1.17
+go 1.18
 
 require (
 	github.com/PowerDNS/go-tlsconfig v0.0.0-20221101135152-0956853b28df
+	github.com/go-logr/logr v1.2.3
 	github.com/minio/minio-go/v7 v7.0.42
 	github.com/prometheus/client_golang v1.13.0
 	github.com/stretchr/testify v1.8.1
@@ -15,7 +16,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect
-	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
