@@ -100,5 +100,5 @@ func TestBackend_marker(t *testing.T) {
 
 	markerFileContent, err = b.Load(ctx, UpdateMarkerFilename)
 	assert.NoError(t, err)
-	assert.Equal(t, b.lastMarker, markerFileContent)
+	assert.EqualValues(t, b.lastMarker, markerFileContent)
 }

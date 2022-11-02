@@ -104,7 +104,7 @@ type Backend struct {
 	log    logr.Logger
 
 	mu         sync.Mutex
-	lastMarker []byte
+	lastMarker string
 	lastList   simpleblob.BlobList
 	lastTime   time.Time
 }
@@ -114,15 +114,16 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 		return b.doList(ctx, prefix)
 	}
 
-	upstreamMarker, err := b.Load(ctx, UpdateMarkerFilename)
+	m, err := b.Load(ctx, UpdateMarkerFilename)
 	exists := !errors.Is(err, os.ErrNotExist)
 	if err != nil && exists {
     		return nil, err
 	}
+	upstreamMarker := string(m)
 
 	b.mu.Lock()
 	mustUpdate := b.lastList == nil ||
-		!bytes.Equal(upstreamMarker, b.lastMarker) ||
+		upstreamMarker != b.lastMarker ||
 		time.Since(b.lastTime) >= b.opt.UpdateMarkerForceListInterval ||
 		!exists
 	blobs := b.lastList

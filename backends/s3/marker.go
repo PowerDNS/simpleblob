@@ -18,14 +18,13 @@ func (b *Backend) setMarker(ctx context.Context, name, etag string, isDel bool) 
 	}
 	nanos := time.Now().UnixNano()
 	s := fmt.Sprintf("%s:%s:%d:%v", name, etag, nanos, isDel)
-	p := []byte(s)
-	_, err := b.doStore(ctx, UpdateMarkerFilename, p)
+	_, err := b.doStore(ctx, UpdateMarkerFilename, []byte(s))
 	if err != nil {
 		return err
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.lastList = nil
-	b.lastMarker = p
+	b.lastMarker = s
 	return nil
 }
