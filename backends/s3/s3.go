@@ -200,7 +200,7 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 	return b.setMarker(ctx, name, info.ETag, false)
 }
 
-func (b *Backend) doStore(ctx context.Context, name string, data []byte) (*minio.UploadInfo, error) {
+func (b *Backend) doStore(ctx context.Context, name string, data []byte) (minio.UploadInfo, error) {
 	metricCalls.WithLabelValues("store").Inc()
 	metricLastCallTimestamp.WithLabelValues("store").SetToCurrentTime()
 
@@ -210,7 +210,7 @@ func (b *Backend) doStore(ctx context.Context, name string, data []byte) (*minio
 	if err != nil {
 		metricCallErrors.WithLabelValues("store").Inc()
 	}
-	return &info, err
+	return info, err
 }
 
 // Delete removes the object identified by name from the S3 Bucket
