@@ -2,13 +2,9 @@ package s3
 
 import (
 	"context"
-	"errors"
-	"os"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/minio/minio-go/v7"
 )
 
 // setMarker puts name and etag into the object identified by
@@ -23,25 +19,14 @@ func (b *Backend) setMarker(ctx context.Context, name, etag string) error {
 	}
 	ts := strconv.FormatInt(time.Now().UnixNano(), 10)
 	lines := []string{name, etag, ts}
-	joined := strings.Join(lines, "\x00")
-	info, err := b.doStore(ctx, UpdateMarkerFilename, []byte(joined))
+	joined := []byte(strings.Join(lines, "\x00"))
+	_, err := b.doStore(ctx, UpdateMarkerFilename, joined)
 	if err != nil {
 		return err
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.lastList = nil
-	b.lastMarker = info.ETag
+	b.lastMarker = joined
 	return nil
-}
-
-// getUpstreamMarker fetches the ETag of the object identified
-// by UpdateMarkerFilename.
-func (b *Backend) getUpstreamMarker(ctx context.Context) (string, error) {
-	info, err := b.client.StatObject(ctx, b.opt.Bucket, UpdateMarkerFilename, minio.StatObjectOptions{})
-	err = convertMinioError(err)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return "", err
-	}
-	return info.ETag, nil
 }

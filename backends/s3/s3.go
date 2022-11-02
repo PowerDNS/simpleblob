@@ -3,6 +3,7 @@ package s3
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -98,7 +99,7 @@ type Backend struct {
 	client *minio.Client
 
 	mu         sync.Mutex
-	lastMarker string // ETag from last marker object write
+	lastMarker []byte
 	lastList   simpleblob.BlobList
 	lastTime   time.Time
 }
@@ -108,15 +109,17 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 		return b.doList(ctx, prefix)
 	}
 
-	upstreamMarker, err := b.getUpstreamMarker(ctx)
-	if err != nil {
+	upstreamMarker, err := b.Load(ctx, UpdateMarkerFilename)
+	exists := !errors.Is(err, os.ErrNotExist)
+	if err != nil && exists {
     		return nil, err
 	}
 
 	b.mu.Lock()
 	mustUpdate := b.lastList == nil ||
-		upstreamMarker != b.lastMarker ||
-		time.Since(b.lastTime) >= b.opt.UpdateMarkerForceListInterval
+		!bytes.Equal(upstreamMarker, b.lastMarker) ||
+		time.Since(b.lastTime) >= b.opt.UpdateMarkerForceListInterval ||
+		!exists
 	blobs := b.lastList
 	b.mu.Unlock()
 

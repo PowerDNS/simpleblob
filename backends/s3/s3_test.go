@@ -82,7 +82,7 @@ func TestBackend(t *testing.T) {
 
 	b := getBackend(ctx, t)
 	tester.DoBackendTests(t, b)
-	assert.Equal(t, "", b.lastMarker)
+	assert.Len(t, b.lastMarker, 0)
 }
 
 func TestBackend_marker(t *testing.T) {
@@ -98,7 +98,7 @@ func TestBackend_marker(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, bytes.HasPrefix(markerFileContent, []byte("foo-1")))
 
-	upMarker, err := b.getUpstreamMarker(ctx)
+	markerFileContent, err = b.Load(ctx, UpdateMarkerFilename)
 	assert.NoError(t, err)
-	assert.Equal(t, b.lastMarker, upMarker)
+	assert.Equal(t, b.lastMarker, markerFileContent)
 }
