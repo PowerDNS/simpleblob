@@ -55,6 +55,18 @@ func (ip InitParams) OptionsThroughYAML(dest interface{}) error {
 	return nil
 }
 
+// Param is the type of extra init parameters. It is returned by
+// calling functional params like WithLogger.
+type Param func(ip *InitParams)
+
+// WithLogger is a GetBackend parameter that sets the logr.Logger to use in the
+// backends.
+func WithLogger(log logr.Logger) Param {
+	return func(ip *InitParams) {
+		ip.Logger = log
+	}
+}
+
 // backends is the internal backend registry
 var (
 	mu       sync.Mutex
@@ -70,33 +82,15 @@ func RegisterBackend(typeName string, initFunc InitFunc) {
 
 // GetBackend creates a new backend instance of given typeName. This type must
 // have been previously registered with RegisterBackend.
-// The options map contains backend dependant key-value options. Some backends
-// take no options, others require some specific options.
-// The lifetime of the context passed in must span the lifetime of the whole
-// backend instance, not just the init time, so do not set any timeout on it!
-//
-// Deprecated: consider switching to GetBackendWithParams
-func GetBackend(ctx context.Context, typeName string, options map[string]interface{}) (Interface, error) {
-	p := InitParams{OptionMap: options}
-	return GetBackendWithParams(ctx, typeName, p)
-}
-
-// GetBackendWithParams creates a new backend instance of given typeName. This type must
-// have been previously registered with RegisterBackend.
-// Unlike the old GetBackend, this directly accepts an InitParams struct which allows
-// us to add more options on the future.
-//
-// One notable addition is the InitParams.Logger field that passes a logr.Logger
-// to the backend.
 //
 // The options map contains backend dependant key-value options. Some backends
 // take no options, others require some specific options.
 //
+// Additional parameters can be passed with extra arguments, like WithLogger.
+//
 // The lifetime of the context passed in must span the lifetime of the whole
 // backend instance, not just the init time, so do not set any timeout on it!
-// TODO: the context lifetime requirement is perhaps error prone and this does
-// not allow setting an init timeout. Not sure what would be a good solution.
-func GetBackendWithParams(ctx context.Context, typeName string, params InitParams) (Interface, error) {
+func GetBackend(ctx context.Context, typeName string, options OptionMap, params ...Param) (Interface, error) {
 	if typeName == "" {
 		return nil, fmt.Errorf("no storage.type configured")
 	}
@@ -106,8 +100,12 @@ func GetBackendWithParams(ctx context.Context, typeName string, params InitParam
 	if !exists {
 		return nil, fmt.Errorf("storage.type %q not found or registered", typeName)
 	}
-	if params.Logger.GetSink() == nil {
-		params.Logger = logr.Discard()
+	p := InitParams{OptionMap: options}
+	for _, param := range params {
+		param(&p)
 	}
-	return initFunc(ctx, params)
+	if p.Logger.GetSink() == nil {
+		p.Logger = logr.Discard()
+	}
+	return initFunc(ctx, p)
 }
