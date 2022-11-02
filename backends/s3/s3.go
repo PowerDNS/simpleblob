@@ -16,6 +16,7 @@ import (
 
 	"github.com/PowerDNS/go-tlsconfig"
 	"github.com/minio/minio-go/v7"
+	"github.com/go-logr/logr"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	"github.com/PowerDNS/simpleblob"
@@ -78,6 +79,9 @@ type Options struct {
 	// change in marker, to ensure a full sync even if the marker would for
 	// some reason get out of sync.
 	UpdateMarkerForceListInterval time.Duration `yaml:"update_marker_force_list_interval"`
+
+	// Not loaded from YAML
+	Logger logr.Logger `yaml:"-"`
 }
 
 func (o Options) Check() error {
@@ -97,6 +101,7 @@ type Backend struct {
 	opt    Options
 	config *minio.Options
 	client *minio.Client
+	log    logr.Logger
 
 	mu         sync.Mutex
 	lastMarker []byte
@@ -227,6 +232,9 @@ func (b *Backend) doDelete(ctx context.Context, name string) error {
 	return err
 }
 
+// New creates a new backend instance.
+// The lifetime of the context passed in must span the lifetime of the whole
+// backend instance, not just the init time, so do not set any timeout on it!
 func New(ctx context.Context, opt Options) (*Backend, error) {
 	if opt.Region == "" {
 		opt.Region = DefaultRegion
@@ -244,15 +252,19 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 		return nil, err
 	}
 
+	log := opt.Logger
+	if log.GetSink() == nil {
+		log = logr.Discard()
+	}
+	log = log.WithName("s3")
+
 	// Automatic TLS handling
 	// This MUST receive a longer running context to be able to automatically
 	// reload certificates, so we use the original ctx, not one with added
 	// InitTimeout.
 	tlsmgr, err := tlsconfig.NewManager(ctx, opt.TLS, tlsconfig.Options{
 		IsClient: true,
-		// TODO: logging might be useful here, but we need to figure this
-		//       out for other parts of simpleblob first.
-		Logr: nil,
+		Logr:     log.WithName("tls-manager"),
 	})
 	if err != nil {
 		return nil, err
@@ -327,6 +339,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 		opt:    opt,
 		config: cfg,
 		client: client,
+		log:    log,
 	}
 
 	return b, nil
@@ -356,6 +369,7 @@ func init() {
 		if err := p.OptionsThroughYAML(&opt); err != nil {
 			return nil, err
 		}
+		opt.Logger = p.Logger
 		return New(ctx, opt)
 	})
 }

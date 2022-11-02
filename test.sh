@@ -48,7 +48,6 @@ go test -count=1 "$@" ./...
 
 # Configure linters in .golangci.yml
 if ! command -v golangci-lint >/dev/null; then
-    go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.45.2
+    go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.50.1
 fi
 golangci-lint run
-
