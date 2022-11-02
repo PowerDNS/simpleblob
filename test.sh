@@ -13,7 +13,7 @@ cleanup() {
 }
 
 export GOBIN="$PWD/bin"
-export PATH="$PATH:$GOBIN"
+export PATH="$GOBIN:$PATH"
 tmpdir=
 
 mkdir -p "$GOBIN"
@@ -32,10 +32,18 @@ if [ -z "$SIMPLEBLOB_TEST_S3_CONFIG" ]; then
 
     # Start MinIO
     echo "* Starting minio at address 127.0.0.1:34730"
-    tmpdir=$(mktemp --directory --tmpdir=. .minio.XXXXXX)
+    tmpdir=$(mktemp -d -t minio.XXXXXX)
     minio server --address 127.0.0.1:34730 --console-address 127.0.0.1:34731 --quiet "$tmpdir" &
     # Wait for minio server to be ready
+    i=0
     while ! curl -s -I "127.0.0.1:34730/minio/health/ready" | grep '200 OK' >/dev/null; do
+        i=$((i+1))
+        if [ "$i" -ge 100 ]; then
+            # We have been waiting for server to start for 10 seconds
+            echo "Minio could not start properly"
+            curl -s -I "127.0.0.1:34730/minio/health/ready"
+            exit 1
+        fi
         sleep .1
     done
 fi
@@ -47,7 +55,8 @@ set -ex
 go test -count=1 "$@" ./...
 
 # Configure linters in .golangci.yml
-if ! command -v golangci-lint >/dev/null; then
-    go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.50.1
+expected_version=v1.50.1
+if ! golangci-lint version | grep -w "$expected_version" >/dev/null 2>&1; then
+    go install github.com/golangci/golangci-lint/cmd/golangci-lint@"$expected_version"
 fi
 golangci-lint run
