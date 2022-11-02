@@ -196,7 +196,7 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	return b.setMarker(ctx, name, info.ETag)
+	return b.setMarker(ctx, name, info.ETag, false)
 }
 
 func (b *Backend) doStore(ctx context.Context, name string, data []byte) (*minio.UploadInfo, error) {
@@ -218,7 +218,7 @@ func (b *Backend) Delete(ctx context.Context, name string) error {
 	if err := b.doDelete(ctx, name); err != nil {
 		return err
 	}
-	return b.setMarker(ctx, name, "")
+	return b.setMarker(ctx, name, "", true)
 }
 
 func (b *Backend) doDelete(ctx context.Context, name string) error {

@@ -13,12 +13,15 @@ import (
 //
 // In case the UseUpdateMarker option is false, this function doesn't do
 // anything and returns no error.
-func (b *Backend) setMarker(ctx context.Context, name, etag string) error {
+func (b *Backend) setMarker(ctx context.Context, name, etag string, isDel bool) error {
 	if !b.opt.UseUpdateMarker {
 		return nil
 	}
 	ts := strconv.FormatInt(time.Now().UnixNano(), 10)
 	lines := []string{name, etag, ts}
+	if isDel {
+    		lines = append(lines, "del")
+	}
 	joined := []byte(strings.Join(lines, "\x00"))
 	_, err := b.doStore(ctx, UpdateMarkerFilename, joined)
 	if err != nil {
