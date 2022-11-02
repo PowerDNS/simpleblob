@@ -2,8 +2,7 @@ package s3
 
 import (
 	"context"
-	"strconv"
-	"strings"
+	"fmt"
 	"time"
 )
 
@@ -17,19 +16,16 @@ func (b *Backend) setMarker(ctx context.Context, name, etag string, isDel bool) 
 	if !b.opt.UseUpdateMarker {
 		return nil
 	}
-	ts := strconv.FormatInt(time.Now().UnixNano(), 10)
-	lines := []string{name, etag, ts}
-	if isDel {
-    		lines = append(lines, "del")
-	}
-	joined := []byte(strings.Join(lines, "\x00"))
-	_, err := b.doStore(ctx, UpdateMarkerFilename, joined)
+	nanos := time.Now().UnixNano()
+	s := fmt.Sprintf("%s\x00%s\x00%d\x00%v", name, etag, nanos, isDel)
+	p := []byte(s)
+	_, err := b.doStore(ctx, UpdateMarkerFilename, p)
 	if err != nil {
 		return err
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.lastList = nil
-	b.lastMarker = joined
+	b.lastMarker = p
 	return nil
 }
