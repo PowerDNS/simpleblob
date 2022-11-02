@@ -1,7 +1,6 @@
 package s3
 
 import (
-	"bytes"
 	"context"
 	"os"
 	"testing"
@@ -93,12 +92,12 @@ func TestBackend_marker(t *testing.T) {
 	b.opt.UseUpdateMarker = true
 
 	tester.DoBackendTests(t, b)
+	assert.Regexp(t, "^foo-1:[A-Za-z0-9]*:[0-9]+:true$", b.lastMarker)
+	// ^ reflects last write operation of tester.DoBackendTests
+	//   i.e. deleting "foo-1"
 
+	// Marker file should have been written accordingly
 	markerFileContent, err := b.Load(ctx, UpdateMarkerFilename)
-	assert.NoError(t, err)
-	assert.True(t, bytes.HasPrefix(markerFileContent, []byte("foo-1")))
-
-	markerFileContent, err = b.Load(ctx, UpdateMarkerFilename)
 	assert.NoError(t, err)
 	assert.EqualValues(t, b.lastMarker, markerFileContent)
 }
