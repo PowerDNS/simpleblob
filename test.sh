@@ -38,13 +38,13 @@ if [ -z "$SIMPLEBLOB_TEST_S3_CONFIG" ]; then
     i=0
     while ! curl -s -I "127.0.0.1:34730/minio/health/ready" | grep '200 OK' >/dev/null; do
         i=$((i+1))
-        if [ "$i" -ge 100 ]; then
+        if [ "$i" -ge 10 ]; then
             # We have been waiting for server to start for 10 seconds
             echo "Minio could not start properly"
             curl -s -I "127.0.0.1:34730/minio/health/ready"
             exit 1
         fi
-        sleep .1
+        sleep 1
     done
 fi
 
@@ -56,7 +56,5 @@ go test -count=1 "$@" ./...
 
 # Configure linters in .golangci.yml
 expected_version=v1.50.1
-if ! golangci-lint version | grep -w "$expected_version" >/dev/null 2>&1; then
-    go install github.com/golangci/golangci-lint/cmd/golangci-lint@"$expected_version"
-fi
+go install github.com/golangci/golangci-lint/cmd/golangci-lint@"$expected_version"
 golangci-lint run
