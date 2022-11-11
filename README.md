@@ -24,7 +24,7 @@ type Interface interface {
 To instantiate a backend, `_`-import all the backends that you want to register, and call:
 
 ```go
-func GetBackendWithParams(ctx context.Context, typeName string, params InitParams) (Interface, error)
+func GetBackend(ctx context.Context, typeName string, options map[string]any, params ...Param) (Interface, error)
 ```
 
 An example can be found in `example_test.go`.
