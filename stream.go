@@ -65,8 +65,8 @@ var errWClosed = errors.New("WriterStorage closed")
 //
 // Content will only be sent to backend when w.Close is called.
 func (w *writer) Write(p []byte) (int, error) {
-	mu.Lock()
-	defer mu.Unlock()
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.closed {
 		return 0, errWClosed
 	}
@@ -76,8 +76,8 @@ func (w *writer) Write(p []byte) (int, error) {
 // Close signifies operations on writer are over.
 // The file is sent to backend when called.
 func (w *writer) Close() error {
-	mu.Lock()
-	defer mu.Unlock()
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.closed {
 		return errWClosed
 	}
