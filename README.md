@@ -24,7 +24,7 @@ type Interface interface {
 To instantiate a backend, `_`-import all the backends that you want to register, and call:
 
 ```go
-func GetBackend(ctx context.Context, typeName string, options map[string]any) (Interface, error)
+func GetBackend(ctx context.Context, typeName string, options map[string]any, params ...Param) (Interface, error)
 ```
 
 An example can be found in `example_test.go`.
@@ -38,8 +38,6 @@ type Storage struct {
 }
 ```
 
-For Go 1.17, replace `any` by `interface{}`.
-
 ## Limitations
 
 The interface currently does not support streaming of large blobs. In the future we may provide this by implementing `fs.FS` in the backend for reading, and a similar interface for writing new blobs.
@@ -50,8 +48,6 @@ We support the last two stable Go versions, currently 1.17 and 1.18.
 
 From a API consumer point of view, we do not plan any backward incompatible changes before a v1.0.
 
-If you want to implement a storage backend, be aware that we will probably add a `Delete` method before v1.0.
-
-Any future extensions most likely be added with optional interface, similar to the `fs.FS` design. Utility functions that return a compatible implementation will be used for backends that do not implement the interface, if possible.
+For storage backends, any future extensions most likely be added with optional interface, similar to the `fs.FS` design. Utility functions that return a compatible implementation will be used for backends that do not implement the interface, when possible.
 
 

@@ -2,7 +2,6 @@ package s3
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"testing"
 	"time"
@@ -21,18 +20,17 @@ import (
 //
 // To run a Minio for this :
 //
-//     env MINIO_ROOT_USER=test MINIO_ROOT_PASSWORD=secret minio server /tmp/test-data/
+//	env MINIO_ROOT_USER=test MINIO_ROOT_PASSWORD=secret minio server /tmp/test-data/
 //
 // Example test config:
 //
-//     {
-//       "access_key": "test",
-//       "secret_key": "verysecret",
-//       "region": "us-east-1",
-//       "bucket": "test-bucket",
-//       "endpoint_url": "http://127.0.0.1:9000"
-//     }
-//
+//	{
+//	  "access_key": "test",
+//	  "secret_key": "verysecret",
+//	  "region": "us-east-1",
+//	  "bucket": "test-bucket",
+//	  "endpoint_url": "http://127.0.0.1:9000"
+//	}
 const TestConfigPathEnv = "SIMPLEBLOB_TEST_S3_CONFIG"
 
 func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
@@ -42,7 +40,7 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 		return
 	}
 
-	cfgContents, err := ioutil.ReadFile(cfgPath)
+	cfgContents, err := os.ReadFile(cfgPath)
 	require.NoError(t, err)
 
 	var opt Options
@@ -53,19 +51,22 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 	require.NoError(t, err)
 
 	cleanup := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
 		blobs, err := b.doList(ctx, "")
 		if err != nil {
 			t.Logf("Blobs list error: %s", err)
 			return
 		}
 		for _, blob := range blobs {
-    			err := b.client.RemoveObject(ctx, b.opt.Bucket, blob.Name, minio.RemoveObjectOptions{})
+			err := b.client.RemoveObject(ctx, b.opt.Bucket, blob.Name, minio.RemoveObjectOptions{})
 			if err != nil {
 				t.Logf("Object delete error: %s", err)
 			}
 		}
 		// This one is not returned by the List command
-    		err = b.client.RemoveObject(ctx, b.opt.Bucket, UpdateMarkerFilename, minio.RemoveObjectOptions{})
+		err = b.client.RemoveObject(ctx, b.opt.Bucket, UpdateMarkerFilename, minio.RemoveObjectOptions{})
 		require.NoError(t, err)
 	}
 	t.Cleanup(cleanup)
@@ -76,24 +77,27 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 
 func TestBackend(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	t.Cleanup(cancel)
+	defer cancel()
 
 	b := getBackend(ctx, t)
 	tester.DoBackendTests(t, b)
-	assert.Equal(t, "", b.lastMarker)
+	assert.Len(t, b.lastMarker, 0)
 }
 
 func TestBackend_marker(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	t.Cleanup(cancel)
+	defer cancel()
 
 	b := getBackend(ctx, t)
 	b.opt.UseUpdateMarker = true
 
 	tester.DoBackendTests(t, b)
-	assert.Equal(t, "bar-1", b.lastMarker)
+	assert.Regexp(t, "^foo-1:[A-Za-z0-9]*:[0-9]+:true$", b.lastMarker)
+	// ^ reflects last write operation of tester.DoBackendTests
+	//   i.e. deleting "foo-1"
 
-	data, err := b.Load(ctx, UpdateMarkerFilename)
+	// Marker file should have been written accordingly
+	markerFileContent, err := b.Load(ctx, UpdateMarkerFilename)
 	assert.NoError(t, err)
-	assert.Equal(t, "bar-1", string(data))
+	assert.EqualValues(t, b.lastMarker, markerFileContent)
 }

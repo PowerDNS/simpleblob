@@ -105,4 +105,13 @@ func DoBackendTests(t *testing.T, b simpleblob.Interface) {
 	// Delete non-existing
 	err = b.Delete(ctx, "foo-1")
 	assert.NoError(t, err)
+
+	// Should not exist anymore
+	_, err = b.Load(ctx, "foo-1")
+	assert.ErrorIs(t, err, os.ErrNotExist)
+
+	// Should not appear in list anymore
+	ls, err = b.List(ctx, "")
+	assert.NoError(t, err)
+	assert.NotContains(t, ls.Names(), "foo-1")
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/PowerDNS/simpleblob"
+	"github.com/go-logr/logr"
 
 	// Register the memory backend plugin
 	_ "github.com/PowerDNS/simpleblob/backends/memory"
@@ -14,7 +15,15 @@ func Example() {
 	// Do not forget the:
 	//     import _ "github.com/PowerDNS/simpleblob/backends/memory"
 	ctx := context.Background()
-	storage, err := simpleblob.GetBackend(ctx, "memory", map[string]interface{}{})
+	storage, err := simpleblob.GetBackend(
+		ctx,
+		"memory",
+		map[string]interface{}{
+			// add key-value options here
+			"foo": "example",
+		},
+		simpleblob.WithLogger(logr.Discard()), // replace with a real logger
+	)
 	check(err)
 	err = storage.Store(ctx, "example.txt", []byte("hello"))
 	check(err)
