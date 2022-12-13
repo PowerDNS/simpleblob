@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/PowerDNS/simpleblob"
 )
@@ -72,8 +73,14 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 	}
 	fullPath := filepath.Join(b.rootPath, name)
 	tmpPath := fullPath + ".tmp" // ignored by List()
-	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+	flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC | os.O_SYNC | syscall.O_DIRECT
+	f, err := os.OpenFile(tmpPath, flags, 0644)
+	if err != nil {
 		return err
+	}
+	_, err = f.Write(data)
+	if err1 := f.Close(); err1 != nil && err == nil {
+		err = err1
 	}
 	return os.Rename(tmpPath, fullPath)
 }
