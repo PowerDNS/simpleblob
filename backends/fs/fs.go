@@ -73,14 +73,11 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 	}
 	fullPath := filepath.Join(b.rootPath, name)
 	tmpPath := fullPath + ".tmp" // ignored by List()
-	flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC | os.O_SYNC | syscall.O_DIRECT
-	f, err := os.OpenFile(tmpPath, flags, 0644)
-	if err != nil {
+	if err := writeFile(tmpPath, data); err != nil {
 		return err
 	}
-	_, err = f.Write(data)
-	if err1 := f.Close(); err1 != nil && err == nil {
-		err = err1
+	if err := syncDir(b.rootPath); err != nil {
+		return err
 	}
 	return os.Rename(tmpPath, fullPath)
 }
@@ -129,4 +126,28 @@ func init() {
 		}
 		return New(opt)
 	})
+}
+
+func writeFile(name string, data []byte) error {
+	f, err := os.Create(name)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err = f.Write(data); err != nil {
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func syncDir(name string) error {
+	dir, err := os.Open(name)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
