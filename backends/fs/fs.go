@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 
 	"github.com/PowerDNS/simpleblob"
 )
@@ -148,6 +147,16 @@ func syncDir(name string) error {
 	if err != nil {
 		return err
 	}
-	defer dir.Close()
-	return dir.Sync()
+	info, err := dir.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		_ = dir.Close()
+		return fmt.Errorf("%s: not a dir", name)
+	}
+	if err := dir.Sync(); err != nil {
+		return err
+	}
+	return dir.Close()
 }
