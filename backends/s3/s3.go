@@ -156,9 +156,9 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 	})
 	for obj := range objCh {
 		// Handle error returned by MinIO client
-		if obj.Err != nil {
+		if err := convertMinioError(obj.Err); err != nil {
 			metricCallErrors.WithLabelValues("list").Inc()
-			return nil, obj.Err
+			return nil, err
 		}
 
 		metricCalls.WithLabelValues("list").Inc()
