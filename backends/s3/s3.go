@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/PowerDNS/go-tlsconfig"
-	"github.com/minio/minio-go/v7"
 	"github.com/go-logr/logr"
+	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	"github.com/PowerDNS/simpleblob"
@@ -117,7 +117,7 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 	m, err := b.Load(ctx, UpdateMarkerFilename)
 	exists := !errors.Is(err, os.ErrNotExist)
 	if err != nil && exists {
-    		return nil, err
+		return nil, err
 	}
 	upstreamMarker := string(m)
 
@@ -155,6 +155,12 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 		Recursive: false,
 	})
 	for obj := range objCh {
+		// Handle error returned by MinIO client
+		if obj.Err != nil {
+			metricCallErrors.WithLabelValues("list").Inc()
+			return nil, obj.Err
+		}
+
 		metricCalls.WithLabelValues("list").Inc()
 		metricLastCallTimestamp.WithLabelValues("list").SetToCurrentTime()
 		if obj.Key == UpdateMarkerFilename {
