@@ -24,9 +24,8 @@ if [ -z "$SIMPLEBLOB_TEST_S3_CONFIG" ]; then
 
     # Fetch minio if not found
     if ! command -v minio >/dev/null; then
-        source <(go env)
         dst="$GOBIN/minio"
-        curl -v -o "$dst" "https://dl.min.io/server/minio/release/$GOOS-$GOARCH/minio"
+        curl -v -o "$dst" "https://dl.min.io/server/minio/release/$(go env GOOS)-$(go env GOARCH)/minio"
         chmod u+x "$dst"
     fi
 
