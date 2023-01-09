@@ -46,6 +46,11 @@ func DoBackendTests(t *testing.T, b simpleblob.Interface) {
 	assert.NoError(t, err)
 	assert.Equal(t, ls.Names(), []string{"bar-1", "bar-2"}) // sorted
 
+	// List with non-existing prefix
+	ls, err = b.List(ctx, "does-not-exist-")
+	assert.NoError(t, err)
+	assert.Nil(t, ls.Names())
+
 	// Load
 	data, err := b.Load(ctx, "foo-1")
 	assert.NoError(t, err)
