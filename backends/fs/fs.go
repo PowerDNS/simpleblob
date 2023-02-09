@@ -149,6 +149,7 @@ func syncDir(name string) error {
 	}
 	info, err := dir.Stat()
 	if err != nil {
+		_ = dir.Close()
 		return err
 	}
 	if !info.IsDir() {
