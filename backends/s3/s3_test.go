@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 
+	"github.com/PowerDNS/simpleblob"
 	"github.com/PowerDNS/simpleblob/tester"
 )
 
@@ -97,7 +98,20 @@ func TestBackend_marker(t *testing.T) {
 	//   i.e. deleting "foo-1"
 
 	// Marker file should have been written accordingly
-	markerFileContent, err := b.Load(ctx, UpdateMarkerFilename)
+	markerFileContent, err := b.doLoad(ctx, UpdateMarkerFilename)
 	assert.NoError(t, err)
 	assert.EqualValues(t, b.lastMarker, markerFileContent)
+
+	// Test that the update marker cannot be loaded, stored,
+	// or deleted.
+	// It must not appear in the blob list either.
+	ls, err := b.List(ctx, UpdateMarkerFilename)
+	assert.Empty(t, ls)
+	assert.NoError(t, err)
+	_, err = b.Load(ctx, UpdateMarkerFilename)
+	assert.ErrorIs(t, err, simpleblob.ErrNameNotAllowed)
+	err = b.Store(ctx, UpdateMarkerFilename, []byte{})
+	assert.ErrorIs(t, err, simpleblob.ErrNameNotAllowed)
+	err = b.Delete(ctx, UpdateMarkerFilename)
+	assert.ErrorIs(t, err, simpleblob.ErrNameNotAllowed)
 }

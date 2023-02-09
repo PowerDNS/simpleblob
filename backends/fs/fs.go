@@ -33,7 +33,7 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 			continue
 		}
 		name := e.Name()
-		if !allowedName(name) {
+		if !simpleblob.AllowedName(name) {
 			continue
 		}
 		if !strings.HasPrefix(name, prefix) {
@@ -59,16 +59,16 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 }
 
 func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
-	if !allowedName(name) {
-		return nil, os.ErrNotExist
+	if err := simpleblob.CheckName(name); err != nil {
+		return nil, err
 	}
 	fullPath := filepath.Join(b.rootPath, name)
 	return os.ReadFile(fullPath)
 }
 
 func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
-	if !allowedName(name) {
-		return os.ErrPermission
+	if err := simpleblob.CheckName(name); err != nil {
+		return err
 	}
 	fullPath := filepath.Join(b.rootPath, name)
 	tmpPath := fullPath + ".tmp" // ignored by List()
@@ -79,28 +79,14 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 }
 
 func (b *Backend) Delete(ctx context.Context, name string) error {
-	if !allowedName(name) {
-		return os.ErrPermission
+	if err := simpleblob.CheckName(name); err != nil {
+		return err
 	}
 	err := os.Remove(filepath.Join(b.rootPath, name))
 	if os.IsNotExist(err) {
 		return nil
 	}
 	return err
-}
-
-func allowedName(name string) bool {
-	// TODO: Make shared and test for rejection
-	if strings.Contains(name, "/") {
-		return false
-	}
-	if strings.HasPrefix(name, ".") {
-		return false
-	}
-	if strings.HasSuffix(name, ".tmp") {
-		return false // used for our temp files when writing
-	}
-	return true
 }
 
 func New(opt Options) (*Backend, error) {

@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/PowerDNS/go-tlsconfig"
-	"github.com/minio/minio-go/v7"
 	"github.com/go-logr/logr"
+	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	"github.com/PowerDNS/simpleblob"
@@ -33,7 +33,7 @@ const (
 	// pass a context when initialising a plugin.
 	DefaultInitTimeout = 20 * time.Second
 	// UpdateMarkerFilename is the filename used for the update marker functionality
-	UpdateMarkerFilename = "update-marker"
+	UpdateMarkerFilename = ".update-marker"
 	// DefaultUpdateMarkerForceListInterval is the default value for
 	// UpdateMarkerForceListInterval.
 	DefaultUpdateMarkerForceListInterval = 5 * time.Minute
@@ -110,14 +110,17 @@ type Backend struct {
 }
 
 func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList, error) {
+	metricCalls.WithLabelValues("list").Inc()
+	metricLastCallTimestamp.WithLabelValues("list").SetToCurrentTime()
+
 	if !b.opt.UseUpdateMarker {
 		return b.doList(ctx, prefix)
 	}
 
-	m, err := b.Load(ctx, UpdateMarkerFilename)
+	m, err := b.doLoad(ctx, UpdateMarkerFilename)
 	exists := !errors.Is(err, os.ErrNotExist)
 	if err != nil && exists {
-    		return nil, err
+		return nil, err
 	}
 	upstreamMarker := string(m)
 
@@ -155,9 +158,7 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 		Recursive: false,
 	})
 	for obj := range objCh {
-		metricCalls.WithLabelValues("list").Inc()
-		metricLastCallTimestamp.WithLabelValues("list").SetToCurrentTime()
-		if obj.Key == UpdateMarkerFilename {
+		if !simpleblob.AllowedName(obj.Key) {
 			continue
 		}
 		blobs = append(blobs, simpleblob.Blob{Name: obj.Key, Size: obj.Size})
@@ -176,10 +177,19 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 	metricCalls.WithLabelValues("load").Inc()
 	metricLastCallTimestamp.WithLabelValues("load").SetToCurrentTime()
 
+	if err := simpleblob.CheckName(name); err != nil {
+		return nil, err
+	}
+
+	return b.doLoad(ctx, name)
+}
+
+func (b *Backend) doLoad(ctx context.Context, name string) ([]byte, error) {
 	obj, err := b.client.GetObject(ctx, b.opt.Bucket, name, minio.GetObjectOptions{})
 	if err = convertMinioError(err); err != nil {
 		return nil, err
-	} else if obj == nil {
+	}
+	if obj == nil {
 		return nil, os.ErrNotExist
 	}
 
@@ -193,6 +203,13 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 // Store sets the content of the object identified by name to the content
 // of data, in the S3 Bucket configured in b.
 func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
+	metricCalls.WithLabelValues("store").Inc()
+	metricLastCallTimestamp.WithLabelValues("store").SetToCurrentTime()
+
+	if err := simpleblob.CheckName(name); err != nil {
+		return err
+	}
+
 	info, err := b.doStore(ctx, name, data)
 	if err != nil {
 		return err
@@ -201,9 +218,6 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 }
 
 func (b *Backend) doStore(ctx context.Context, name string, data []byte) (minio.UploadInfo, error) {
-	metricCalls.WithLabelValues("store").Inc()
-	metricLastCallTimestamp.WithLabelValues("store").SetToCurrentTime()
-
 	info, err := b.client.PutObject(ctx, b.opt.Bucket, name, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{
 		NumThreads: 3,
 	})
@@ -216,6 +230,13 @@ func (b *Backend) doStore(ctx context.Context, name string, data []byte) (minio.
 // Delete removes the object identified by name from the S3 Bucket
 // configured in b.
 func (b *Backend) Delete(ctx context.Context, name string) error {
+	metricCalls.WithLabelValues("delete").Inc()
+	metricLastCallTimestamp.WithLabelValues("delete").SetToCurrentTime()
+
+	if err := simpleblob.CheckName(name); err != nil {
+		return err
+	}
+
 	if err := b.doDelete(ctx, name); err != nil {
 		return err
 	}
@@ -223,9 +244,6 @@ func (b *Backend) Delete(ctx context.Context, name string) error {
 }
 
 func (b *Backend) doDelete(ctx context.Context, name string) error {
-	metricCalls.WithLabelValues("delete").Inc()
-	metricLastCallTimestamp.WithLabelValues("delete").SetToCurrentTime()
-
 	err := b.client.RemoveObject(ctx, b.opt.Bucket, name, minio.RemoveObjectOptions{})
 	if err = convertMinioError(err); err != nil {
 		metricCallErrors.WithLabelValues("delete").Inc()

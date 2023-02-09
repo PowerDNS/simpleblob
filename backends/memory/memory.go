@@ -20,6 +20,9 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 
 	b.mu.Lock()
 	for name, data := range b.blobs {
+		if !simpleblob.AllowedName(name) {
+			continue
+		}
 		if !strings.HasPrefix(name, prefix) {
 			continue
 		}
@@ -35,6 +38,10 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 }
 
 func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
+	if err := simpleblob.CheckName(name); err != nil {
+		return nil, err
+	}
+
 	b.mu.Lock()
 	data, exists := b.blobs[name]
 	b.mu.Unlock()
@@ -48,6 +55,10 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 }
 
 func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
+	if err := simpleblob.CheckName(name); err != nil {
+		return err
+	}
+
 	dataCopy := make([]byte, len(data))
 	copy(dataCopy, data)
 
@@ -59,6 +70,10 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 }
 
 func (b *Backend) Delete(ctx context.Context, name string) error {
+	if err := simpleblob.CheckName(name); err != nil {
+		return err
+	}
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	delete(b.blobs, name)
