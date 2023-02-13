@@ -158,6 +158,12 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 		Recursive: false,
 	})
 	for obj := range objCh {
+		// Handle error returned by MinIO client
+		if err := convertMinioError(obj.Err); err != nil {
+			metricCallErrors.WithLabelValues("list").Inc()
+			return nil, err
+		}
+
 		if !simpleblob.AllowedName(obj.Key) {
 			continue
 		}
