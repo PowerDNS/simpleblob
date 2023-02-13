@@ -19,6 +19,15 @@ func DoBackendTests(t *testing.T, b simpleblob.Interface) {
 	assert.NoError(t, err)
 	assert.Len(t, ls, 0)
 
+	// Forbidden names
+	data, err := b.Load(ctx, "")
+	assert.Empty(t, data)
+	assert.ErrorIs(t, err, simpleblob.ErrNameNotAllowed)
+	err = b.Store(ctx, "", []byte{})
+	assert.ErrorIs(t, err, simpleblob.ErrNameNotAllowed)
+	err = b.Delete(ctx, "")
+	assert.ErrorIs(t, err, simpleblob.ErrNameNotAllowed)
+
 	// Add items
 	foo := []byte("foo") // will be modified later
 	err = b.Store(ctx, "foo-1", foo)
@@ -47,7 +56,7 @@ func DoBackendTests(t *testing.T, b simpleblob.Interface) {
 	assert.Equal(t, ls.Names(), []string{"bar-1", "bar-2"}) // sorted
 
 	// Load
-	data, err := b.Load(ctx, "foo-1")
+	data, err = b.Load(ctx, "foo-1")
 	assert.NoError(t, err)
 	assert.Equal(t, data, []byte("foo"))
 
