@@ -10,30 +10,33 @@ var ErrNameNotAllowed = errors.New("name not allowed")
 
 // AllowedName is used to determine if name is suitable to be saved
 // by any backend.
-func AllowedName(name string) bool {
-    	if name == "" {
-        	return false
-    	}
-	if strings.Contains(name, "/") {
-		return false
-	}
-	if strings.Contains(name, "\x00") {
-		return false
-	}
-	if strings.HasPrefix(name, ".") {
-		return false
-	}
-	if strings.HasSuffix(name, ".tmp") {
-		return false // used for our temp files when writing
-	}
-	return true
+func AllowedName(s string) bool {
+	return CheckName(s) == nil
 }
 
-// CheckName calls AllowedName on name, and if false returns an error
-// wrapping ErrNameNotAllowed.
-func CheckName(name string) error {
-	if AllowedName(name) {
-		return nil
+// CheckName returns nil if s is a suitable name for a blob.
+// Otherwise, an error is returned, describing why the name is rejected.
+func CheckName(s string) error {
+	if s == "" {
+		return fmt.Errorf("%q: %w (empty)", s, ErrNameNotAllowed)
 	}
-	return fmt.Errorf("%q: %w", name, ErrNameNotAllowed)
+	contents := []string{"/", "\x00"}
+	prefices := []string{"."}
+	suffices := []string{".tmp"}
+	for _, t := range contents {
+		if strings.Contains(s, t) {
+			return fmt.Errorf("%q: %w (cannot contain %q)", s, ErrNameNotAllowed, t)
+		}
+	}
+	for _, t := range prefices {
+		if strings.HasPrefix(s, t) {
+			return fmt.Errorf("%q: %w (cannot have prefix %q)", s, ErrNameNotAllowed, t)
+		}
+	}
+	for _, t := range suffices {
+		if strings.HasSuffix(s, t) {
+			return fmt.Errorf("%q: %w (cannot have suffix %q)", s, ErrNameNotAllowed, t)
+		}
+	}
+	return nil
 }
