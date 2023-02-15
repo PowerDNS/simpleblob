@@ -72,6 +72,7 @@ func (w *writer) Close() error {
 // NewWriter returns an optimized io.WriteCloser for backend if available,
 // else a basic buffered implementation.
 func NewWriter(ctx context.Context, st Interface, name string) (io.WriteCloser, error) {
+	// TODO: check name is allowed
 	if sst, ok := st.(WriterStorage); ok {
 		return sst.NewWriter(ctx, name)
 	}
