@@ -21,19 +21,19 @@ func CheckName(s string) error {
 		return fmt.Errorf("%q: %w (empty)", s, ErrNameNotAllowed)
 	}
 	contents := []string{"/", "\x00"}
-	prefices := []string{"."}
-	suffices := []string{".tmp"}
+	prefixes := []string{"."}
+	suffixes := []string{".tmp"}
 	for _, t := range contents {
 		if strings.Contains(s, t) {
 			return fmt.Errorf("%q: %w (cannot contain %q)", s, ErrNameNotAllowed, t)
 		}
 	}
-	for _, t := range prefices {
+	for _, t := range prefixes {
 		if strings.HasPrefix(s, t) {
 			return fmt.Errorf("%q: %w (cannot have prefix %q)", s, ErrNameNotAllowed, t)
 		}
 	}
-	for _, t := range suffices {
+	for _, t := range suffixes {
 		if strings.HasSuffix(s, t) {
 			return fmt.Errorf("%q: %w (cannot have suffix %q)", s, ErrNameNotAllowed, t)
 		}
