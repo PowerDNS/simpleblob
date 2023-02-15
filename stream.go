@@ -24,17 +24,6 @@ type WriterStorage interface {
 	NewWriter(context.Context, string) (io.WriteCloser, error)
 }
 
-// A reader wraps a backend to satisfy io.ReadCloser.
-type reader struct {
-	st Interface
-	*bytes.Reader
-}
-
-// Close signifies operations on reader are over.
-func (*reader) Close() error {
-	return nil
-}
-
 // NewReader returns an optimized io.ReadCloser for backend if available,
 // else a basic buffered implementation.
 func NewReader(ctx context.Context, st Interface, name string) (io.ReadCloser, error) {
@@ -45,7 +34,7 @@ func NewReader(ctx context.Context, st Interface, name string) (io.ReadCloser, e
 	if err != nil {
 		return nil, err
 	}
-	return &reader{st, bytes.NewReader(b)}, nil
+	return io.NopCloser(bytes.NewReader(b)), nil
 }
 
 // A writer wraps a backend to satisfy io.WriteCloser.
