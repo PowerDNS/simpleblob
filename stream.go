@@ -3,8 +3,8 @@ package simpleblob
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
+	"io/fs"
 )
 
 // A ReaderStorage is an Interface providing an optimized way to create an io.ReadCloser.
@@ -46,14 +46,15 @@ type writer struct {
 	buf    bytes.Buffer
 }
 
-var errWClosed = errors.New("WriterStorage closed")
+// ErrClosed implies that the Close function has already been called.
+var ErrClosed = fs.ErrClosed
 
 // Write appends p to the data ready to be stored.
 //
 // Content will only be sent to backend when w.Close is called.
 func (w *writer) Write(p []byte) (int, error) {
 	if w.closed {
-		return 0, errWClosed
+		return 0, ErrClosed
 	}
 	return w.buf.Write(p)
 }
@@ -62,7 +63,7 @@ func (w *writer) Write(p []byte) (int, error) {
 // The file is sent to backend when called.
 func (w *writer) Close() error {
 	if w.closed {
-		return errWClosed
+		return ErrClosed
 	}
 	w.closed = true
 	return w.st.Store(w.ctx, w.name, w.buf.Bytes())
