@@ -36,9 +36,9 @@ func NewReader(ctx context.Context, st Interface, name string) (io.ReadCloser, e
 	return io.NopCloser(bytes.NewReader(b)), nil
 }
 
-// A writer wraps a backend to satisfy io.WriteCloser.
+// A fallbackWriter wraps a backend to satisfy io.WriteCloser.
 // The bytes written to it are buffered, then sent to backend when closed.
-type writer struct {
+type fallbackWriter struct {
 	st     Interface
 	ctx    context.Context
 	name   string
@@ -52,7 +52,7 @@ var ErrClosed = fs.ErrClosed
 // Write appends p to the data ready to be stored.
 //
 // Content will only be sent to backend when w.Close is called.
-func (w *writer) Write(p []byte) (int, error) {
+func (w *fallbackWriter) Write(p []byte) (int, error) {
 	if w.closed {
 		return 0, ErrClosed
 	}
@@ -61,7 +61,7 @@ func (w *writer) Write(p []byte) (int, error) {
 
 // Close signifies operations on writer are over.
 // The file is sent to backend when called.
-func (w *writer) Close() error {
+func (w *fallbackWriter) Close() error {
 	if w.closed {
 		return ErrClosed
 	}
@@ -76,7 +76,7 @@ func NewWriter(ctx context.Context, st Interface, name string) (io.WriteCloser, 
 	if sst, ok := st.(WriterStorage); ok {
 		return sst.NewWriter(ctx, name)
 	}
-	return &writer{
+	return &fallbackWriter{
 		st:   st,
 		ctx:  ctx,
 		name: name,
