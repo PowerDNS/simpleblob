@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"sync"
 )
 
 // A ReaderStorage is an Interface providing an optimized way to create an io.ReadCloser.
@@ -13,7 +12,7 @@ type ReaderStorage interface {
 	Interface
 	// NewReader returns an io.ReadCloser, allowing stream reading
 	// of named value from the underlying backend.
-	NewReader(context.Context, name string) (io.ReadCloser, error)
+	NewReader(ctx context.Context, name string) (io.ReadCloser, error)
 }
 
 // A WriterStorage is an Interface providing an optimized way to create an io.WriteCloser.
@@ -21,7 +20,7 @@ type WriterStorage interface {
 	Interface
 	// NewWriter returns an io.WriteCloser, allowing stream writing
 	// to named key in the underlying backend.
-	NewWriter(context.Context, string) (io.WriteCloser, error)
+	NewWriter(ctx context.Context, name string) (io.WriteCloser, error)
 }
 
 // NewReader returns an optimized io.ReadCloser for backend if available,
@@ -45,7 +44,6 @@ type writer struct {
 	name   string
 	closed bool
 	buf    bytes.Buffer
-	mu     sync.Mutex
 }
 
 var errWClosed = errors.New("WriterStorage closed")
@@ -54,8 +52,6 @@ var errWClosed = errors.New("WriterStorage closed")
 //
 // Content will only be sent to backend when w.Close is called.
 func (w *writer) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
 	if w.closed {
 		return 0, errWClosed
 	}
@@ -65,8 +61,6 @@ func (w *writer) Write(p []byte) (int, error) {
 // Close signifies operations on writer are over.
 // The file is sent to backend when called.
 func (w *writer) Close() error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
 	if w.closed {
 		return errWClosed
 	}
