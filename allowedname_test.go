@@ -14,8 +14,9 @@ func TestAllowedNames(t *testing.T) {
 		"not-really-temporary.tmp ", // Notice space after '.tmp'
 	}
 	for _, name := range names {
-		if !simpleblob.AllowedName(name) {
+		if err := simpleblob.CheckName(name); err != nil {
 			t.Logf("%q: should be allowed", name)
+			t.Log(err)
 			t.Fail()
 		}
 	}
@@ -30,7 +31,7 @@ func TestForbiddenNames(t *testing.T) {
 		"",
 	}
 	for _, name := range names {
-		if simpleblob.AllowedName(name) {
+		if err := simpleblob.CheckName(name); err == nil {
 			t.Logf("%q: should be forbidden", name)
 			t.Fail()
 		}

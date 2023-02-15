@@ -105,13 +105,14 @@ func TestBackend_marker(t *testing.T) {
 	// Test that the update marker cannot be loaded, stored,
 	// or deleted.
 	// It must not appear in the blob list either.
+	var nameError *simpleblob.NameError
 	ls, err := b.List(ctx, UpdateMarkerFilename)
 	assert.Empty(t, ls)
 	assert.NoError(t, err)
 	_, err = b.Load(ctx, UpdateMarkerFilename)
-	assert.ErrorIs(t, err, simpleblob.ErrNameNotAllowed)
+	assert.ErrorAs(t, err, &nameError)
 	err = b.Store(ctx, UpdateMarkerFilename, []byte{})
-	assert.ErrorIs(t, err, simpleblob.ErrNameNotAllowed)
+	assert.ErrorAs(t, err, &nameError)
 	err = b.Delete(ctx, UpdateMarkerFilename)
-	assert.ErrorIs(t, err, simpleblob.ErrNameNotAllowed)
+	assert.ErrorAs(t, err, &nameError)
 }

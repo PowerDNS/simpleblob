@@ -20,13 +20,14 @@ func DoBackendTests(t *testing.T, b simpleblob.Interface) {
 	assert.Len(t, ls, 0)
 
 	// Forbidden names
+	var nameError *simpleblob.NameError
 	data, err := b.Load(ctx, "")
 	assert.Empty(t, data)
-	assert.ErrorIs(t, err, simpleblob.ErrNameNotAllowed)
+	assert.ErrorAs(t, err, &nameError)
 	err = b.Store(ctx, "", []byte{})
-	assert.ErrorIs(t, err, simpleblob.ErrNameNotAllowed)
+	assert.ErrorAs(t, err, &nameError)
 	err = b.Delete(ctx, "")
-	assert.ErrorIs(t, err, simpleblob.ErrNameNotAllowed)
+	assert.ErrorAs(t, err, &nameError)
 
 	// Add items
 	foo := []byte("foo") // will be modified later
