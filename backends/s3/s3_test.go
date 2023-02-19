@@ -54,13 +54,13 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		blobs, err := b.doList(ctx, "")
+		blobs, err := b.List(ctx, "")
 		if err != nil {
 			t.Logf("Blobs list error: %s", err)
 			return
 		}
 		for _, blob := range blobs {
-			err := b.client.RemoveObject(ctx, b.opt.Bucket, blob.Name, minio.RemoveObjectOptions{})
+			err := b.Delete(ctx, blob.Name)
 			if err != nil {
 				t.Logf("Object delete error: %s", err)
 			}
@@ -100,4 +100,56 @@ func TestBackend_marker(t *testing.T) {
 	markerFileContent, err := b.Load(ctx, UpdateMarkerFilename)
 	assert.NoError(t, err)
 	assert.EqualValues(t, b.lastMarker, markerFileContent)
+}
+
+func TestBackend_globalprefix(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	b := getBackend(ctx, t)
+	b.opt.GlobalPrefix = "v5/"
+
+	tester.DoBackendTests(t, b)
+	assert.Len(t, b.lastMarker, 0)
+}
+
+func TestBackend_recursive(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	b := getBackend(ctx, t)
+
+	// Starts empty
+	ls, err := b.List(ctx, "")
+	assert.NoError(t, err)
+	assert.Len(t, ls, 0)
+
+	// Add items
+	err = b.Store(ctx, "bar-1", []byte("bar1"))
+	assert.NoError(t, err)
+	err = b.Store(ctx, "bar-2", []byte("bar2"))
+	assert.NoError(t, err)
+	err = b.Store(ctx, "foo/bar-3", []byte("bar3"))
+	assert.NoError(t, err)
+
+	// List all - no recursion (default)
+	ls, err = b.List(ctx, "")
+	assert.NoError(t, err)
+	assert.Equal(t, ls.Names(), []string{"bar-1", "bar-2", "foo/"})
+
+	// List all - recursive enabled
+	b.opt.Recursive = true
+
+	ls, err = b.List(ctx, "")
+	assert.NoError(t, err)
+	assert.Equal(t, ls.Names(), []string{"bar-1", "bar-2", "foo/bar-3"})
+
+	// List all - recursive disabled
+	b.opt.Recursive = false
+
+	ls, err = b.List(ctx, "")
+	assert.NoError(t, err)
+	assert.Equal(t, ls.Names(), []string{"bar-1", "bar-2", "foo/"})
+
+	assert.Len(t, b.lastMarker, 0)
 }
