@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/PowerDNS/go-tlsconfig"
-	"github.com/minio/minio-go/v7"
 	"github.com/go-logr/logr"
+	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	"github.com/PowerDNS/simpleblob"
@@ -117,7 +117,7 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 	m, err := b.Load(ctx, UpdateMarkerFilename)
 	exists := !errors.Is(err, os.ErrNotExist)
 	if err != nil && exists {
-    		return nil, err
+		return nil, err
 	}
 	upstreamMarker := string(m)
 
@@ -297,9 +297,9 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	case "https":
 		useSSL = true
 	case "":
-		return nil, fmt.Errorf("no scheme provided for endpoint URL '%s', use http or https.", opt.EndpointURL)
+		return nil, fmt.Errorf("no scheme provided for endpoint URL %q, use http or https", opt.EndpointURL)
 	default:
-		return nil, fmt.Errorf("unsupported scheme for S3: '%s', use http or https.", u.Scheme)
+		return nil, fmt.Errorf("unsupported scheme for S3: %q, use http or https", u.Scheme)
 	}
 
 	cfg := &minio.Options{
