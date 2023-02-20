@@ -89,6 +89,9 @@ func DoBackendTests(t *testing.T, b simpleblob.Interface) {
 	data, err = b.Load(ctx, "fizz")
 	assert.NoError(t, err)
 	assert.Equal(t, buzz, data)
+	ls, err = b.List(ctx, "")
+	assert.NoError(t, err)
+	assert.Contains(t, ls.Names(), "fizz")
 
 	// Load non-existing
 	_, err = b.Load(ctx, "does-not-exist")
