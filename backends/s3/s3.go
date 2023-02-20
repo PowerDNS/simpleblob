@@ -173,21 +173,52 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 // Load retrieves the content of the object identified by name from S3 Bucket
 // configured in b.
 func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
-	metricCalls.WithLabelValues("load").Inc()
-	metricLastCallTimestamp.WithLabelValues("load").SetToCurrentTime()
-
-	obj, err := b.client.GetObject(ctx, b.opt.Bucket, name, minio.GetObjectOptions{})
-	if err = convertMinioError(err); err != nil {
+	r, err := b.doLoadReader(ctx, name, true)
+	if err != nil {
 		return nil, err
-	} else if obj == nil {
-		return nil, os.ErrNotExist
 	}
+	defer r.Close()
 
-	p, err := io.ReadAll(obj)
+	p, err := io.ReadAll(r)
 	if err = convertMinioError(err); err != nil {
+		metricCallErrors.WithLabelValues("load").Inc()
 		return nil, err
 	}
 	return p, nil
+}
+
+func (b *Backend) doLoadReader(ctx context.Context, name string, withMetrics bool) (io.ReadCloser, error) {
+	if withMetrics {
+		metricCalls.WithLabelValues("load").Inc()
+		metricLastCallTimestamp.WithLabelValues("load").SetToCurrentTime()
+	}
+
+	obj, err := b.client.GetObject(ctx, b.opt.Bucket, name, minio.GetObjectOptions{})
+	if err = convertMinioError(err); err != nil {
+		if withMetrics {
+			metricCallErrors.WithLabelValues("load").Inc()
+		}
+		return nil, err
+	}
+	if obj == nil {
+		return nil, os.ErrNotExist
+	}
+	info, err := obj.Stat()
+	if err = convertMinioError(err); err != nil {
+		if withMetrics {
+			metricCallErrors.WithLabelValues("load").Inc()
+		}
+		return nil, err
+	}
+	if info.Key == "" {
+		// minio will return an object with empty fields when name
+		// is not present in bucket.
+		if withMetrics {
+			metricCallErrors.WithLabelValues("load").Inc()
+		}
+		return nil, os.ErrNotExist
+	}
+	return obj, nil
 }
 
 // Store sets the content of the object identified by name to the content
@@ -346,25 +377,17 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	return b, nil
 }
 
-// NewReader satisfies ReaderStorage and provides an optimized, streamed way
-// to fetch a blob from S3 server.
+// NewReader satisfies ReaderStorage and provides a streaming interface to
+// a blob located on an S3 server.
 func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, error) {
-	obj, err := b.client.GetObject(ctx, b.opt.Bucket, name, minio.GetObjectOptions{})
-	if err = convertMinioError(err); err != nil {
+	r, err := b.doLoadReader(ctx, name, true)
+	if err != nil {
 		return nil, err
 	}
-	if obj == nil {
+	if r == nil {
 		return nil, os.ErrNotExist
 	}
-
-	info, err := obj.Stat()
-	if err = convertMinioError(err); err != nil {
-		return nil, err
-	}
-	if info.Key != name {
-		return nil, os.ErrNotExist
-	}
-	return obj, nil
+	return r, nil
 }
 
 // convertMinioError takes an error, possibly a minio.ErrorResponse
