@@ -132,24 +132,24 @@ func TestBackend_recursive(t *testing.T) {
 	err = b.Store(ctx, "foo/bar-3", []byte("bar3"))
 	assert.NoError(t, err)
 
-	// List all - no recursion (default)
-	ls, err = b.List(ctx, "")
-	assert.NoError(t, err)
-	assert.Equal(t, ls.Names(), []string{"bar-1", "bar-2", "foo/"})
-
-	// List all - recursive enabled
-	b.opt.Recursive = true
-
+	// List all - PrefixFolders disabled (default)
 	ls, err = b.List(ctx, "")
 	assert.NoError(t, err)
 	assert.Equal(t, ls.Names(), []string{"bar-1", "bar-2", "foo/bar-3"})
 
-	// List all - recursive disabled
-	b.opt.Recursive = false
+	// List all - PrefixFolders enabled
+	b.opt.PrefixFolders = true
 
 	ls, err = b.List(ctx, "")
 	assert.NoError(t, err)
 	assert.Equal(t, ls.Names(), []string{"bar-1", "bar-2", "foo/"})
+
+	// List all - PrefixFolders disabled
+	b.opt.PrefixFolders = false
+
+	ls, err = b.List(ctx, "")
+	assert.NoError(t, err)
+	assert.Equal(t, ls.Names(), []string{"bar-1", "bar-2", "foo/bar-3"})
 
 	assert.Len(t, b.lastMarker, 0)
 }

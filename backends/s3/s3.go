@@ -55,8 +55,9 @@ type Options struct {
 	// seamlessly
 	GlobalPrefix string `yaml:"global_prefix"`
 
-	// Recursive can be enabled to make List operations recurse into nested prefixes
-	Recursive bool `yaml:"recursive"`
+	// PrefixFolders can be enabled to make List operations show nested prefixes as folders
+	// instead of recursively listing all contents of nested prefixes
+	PrefixFolders bool `yaml:"prefix_folders"`
 
 	// EndpointURL can be set to something like "http://localhost:9000" when using Minio
 	// or "https://s3.amazonaws.com" for AWS S3.
@@ -165,7 +166,7 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 
 	objCh := b.client.ListObjects(ctx, b.opt.Bucket, minio.ListObjectsOptions{
 		Prefix:    prefix,
-		Recursive: b.opt.Recursive,
+		Recursive: !b.opt.PrefixFolders,
 	})
 	for obj := range objCh {
 		// Handle error returned by MinIO client
