@@ -384,9 +384,6 @@ func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, er
 	if err != nil {
 		return nil, err
 	}
-	if r == nil {
-		return nil, os.ErrNotExist
-	}
 	return r, nil
 }
 
