@@ -232,13 +232,20 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 }
 
 func (b *Backend) doStore(ctx context.Context, name string, data []byte) (minio.UploadInfo, error) {
-	metricCalls.WithLabelValues("store").Inc()
-	metricLastCallTimestamp.WithLabelValues("store").SetToCurrentTime()
+	return b.doStoreReader(ctx, name, bytes.NewReader(data), int64(len(data)), true)
+}
 
-	info, err := b.client.PutObject(ctx, b.opt.Bucket, name, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{
+func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader, size int64, withMetrics bool) (minio.UploadInfo, error) {
+	if withMetrics {
+		metricCalls.WithLabelValues("store").Inc()
+		metricLastCallTimestamp.WithLabelValues("store").SetToCurrentTime()
+	}
+
+	info, err := b.client.PutObject(ctx, b.opt.Bucket, name, r, size, minio.PutObjectOptions{
 		NumThreads: 3,
 	})
-	if err != nil {
+	err = convertMinioError(err)
+	if err != nil && withMetrics {
 		metricCallErrors.WithLabelValues("store").Inc()
 	}
 	return info, err
@@ -377,7 +384,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	return b, nil
 }
 
-// NewReader satisfies ReaderStorage and provides a streaming interface to
+// NewReader satisfies ReaderStorage and provides a read streaming interface to
 // a blob located on an S3 server.
 func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, error) {
 	r, err := b.doLoadReader(ctx, name, true)
@@ -385,6 +392,51 @@ func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, er
 		return nil, err
 	}
 	return r, nil
+}
+
+// NewReader satisfies ReaderStorage and provides a write streaming interface to
+// a blob located on an S3 server.
+func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, error) {
+	pr, pw := io.Pipe()
+	wrap := &writerWrapper{backend: b, pw: pw, ctx: ctx, name: name}
+	wrap.wg.Add(1)
+	go func() {
+		defer wrap.wg.Done()
+		wrap.info, wrap.err = b.doStoreReader(ctx, name, pr, -1, true)
+	}()
+	return wrap, nil
+}
+
+// A writerWrapper implements io.WriteCloser and is returned by (*Backend).NewWriter.
+type writerWrapper struct {
+	// Basic data we need for the transfer.
+	ctx     context.Context
+	backend *Backend
+	name    string
+
+	// Writer-only logic variables.
+	pw *io.PipeWriter
+	wg sync.WaitGroup
+
+	// Information to be gathered after transfer.
+	info minio.UploadInfo
+	err  error
+}
+
+func (w *writerWrapper) Write(p []byte) (int, error) {
+	return w.pw.Write(p)
+}
+
+func (w *writerWrapper) Close() error {
+	err := w.pw.Close()
+	w.wg.Wait()
+	if w.err != nil {
+		return w.err
+	}
+	if err != nil {
+		return err
+	}
+	return w.backend.setMarker(w.ctx, w.name, w.info.ETag, false)
 }
 
 // convertMinioError takes an error, possibly a minio.ErrorResponse
