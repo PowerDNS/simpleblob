@@ -51,6 +51,14 @@ type Options struct {
 	// CreateBucket tells us to try to create the bucket
 	CreateBucket bool `yaml:"create_bucket"`
 
+	// GlobalPrefix is a prefix applied to all operations, allowing work within a prefix
+	// seamlessly
+	GlobalPrefix string `yaml:"global_prefix"`
+
+	// PrefixFolders can be enabled to make List operations show nested prefixes as folders
+	// instead of recursively listing all contents of nested prefixes
+	PrefixFolders bool `yaml:"prefix_folders"`
+
 	// EndpointURL can be set to something like "http://localhost:9000" when using Minio
 	// or "https://s3.amazonaws.com" for AWS S3.
 	EndpointURL string `yaml:"endpoint_url"`
@@ -110,6 +118,9 @@ type Backend struct {
 }
 
 func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList, error) {
+	// Prepend global prefix
+	prefix = b.prependGlobalPrefix(prefix)
+
 	if !b.opt.UseUpdateMarker {
 		return b.doList(ctx, prefix)
 	}
@@ -150,17 +161,33 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobList, error) {
 	var blobs simpleblob.BlobList
 
+	// Runes to strip from blob names for GlobalPrefix
+	gpEndRune := len(b.opt.GlobalPrefix)
+
 	objCh := b.client.ListObjects(ctx, b.opt.Bucket, minio.ListObjectsOptions{
 		Prefix:    prefix,
-		Recursive: false,
+		Recursive: !b.opt.PrefixFolders,
 	})
 	for obj := range objCh {
+		// Handle error returned by MinIO client
+		if err := convertMinioError(obj.Err); err != nil {
+			metricCallErrors.WithLabelValues("list").Inc()
+			return nil, err
+		}
+
 		metricCalls.WithLabelValues("list").Inc()
 		metricLastCallTimestamp.WithLabelValues("list").SetToCurrentTime()
 		if obj.Key == UpdateMarkerFilename {
 			continue
 		}
-		blobs = append(blobs, simpleblob.Blob{Name: obj.Key, Size: obj.Size})
+
+		// Strip global prefix from blob
+		blobName := obj.Key
+		if gpEndRune > 0 {
+			blobName = blobName[gpEndRune:]
+		}
+
+		blobs = append(blobs, simpleblob.Blob{Name: blobName, Size: obj.Size})
 	}
 
 	// Minio appears to return them sorted, but maybe not all implementations
@@ -173,7 +200,7 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 // Load retrieves the content of the object identified by name from S3 Bucket
 // configured in b.
 func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
-	r, err := b.doLoadReader(ctx, name, true)
+	r, err := b.doLoadReader(ctx, name, true, true)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +214,10 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 	return p, nil
 }
 
-func (b *Backend) doLoadReader(ctx context.Context, name string, withMetrics bool) (io.ReadCloser, error) {
+func (b *Backend) doLoadReader(ctx context.Context, name string, withPrefix, withMetrics bool) (io.ReadCloser, error) {
+	if withPrefix {
+		name = b.prependGlobalPrefix(name)
+	}
 	if withMetrics {
 		metricCalls.WithLabelValues("load").Inc()
 		metricLastCallTimestamp.WithLabelValues("load").SetToCurrentTime()
@@ -232,10 +262,13 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 }
 
 func (b *Backend) doStore(ctx context.Context, name string, data []byte) (minio.UploadInfo, error) {
-	return b.doStoreReader(ctx, name, bytes.NewReader(data), int64(len(data)), true)
+	return b.doStoreReader(ctx, name, bytes.NewReader(data), int64(len(data)), true, true)
 }
 
-func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader, size int64, withMetrics bool) (minio.UploadInfo, error) {
+func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader, size int64, withPrefix, withMetrics bool) (minio.UploadInfo, error) {
+	if withPrefix {
+		name = b.prependGlobalPrefix(name)
+	}
 	if withMetrics {
 		metricCalls.WithLabelValues("store").Inc()
 		metricLastCallTimestamp.WithLabelValues("store").SetToCurrentTime()
@@ -254,6 +287,9 @@ func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader, s
 // Delete removes the object identified by name from the S3 Bucket
 // configured in b.
 func (b *Backend) Delete(ctx context.Context, name string) error {
+	// Prepend global prefix
+	name = b.prependGlobalPrefix(name)
+
 	if err := b.doDelete(ctx, name); err != nil {
 		return err
 	}
@@ -387,7 +423,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 // NewReader satisfies ReaderStorage and provides a read streaming interface to
 // a blob located on an S3 server.
 func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, error) {
-	r, err := b.doLoadReader(ctx, name, true)
+	r, err := b.doLoadReader(ctx, name, true, true)
 	if err != nil {
 		return nil, err
 	}
@@ -402,7 +438,7 @@ func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, e
 	wrap.wg.Add(1)
 	go func() {
 		defer wrap.wg.Done()
-		wrap.info, wrap.err = b.doStoreReader(ctx, name, pr, -1, true)
+		wrap.info, wrap.err = b.doStoreReader(ctx, name, pr, -1, true, true)
 	}()
 	return wrap, nil
 }
@@ -455,6 +491,12 @@ func convertMinioError(err error) error {
 		return err
 	}
 	return nil
+}
+
+// prependGlobalPrefix prepends the GlobalPrefix to the name/prefix
+// passed as input
+func (b *Backend) prependGlobalPrefix(name string) string {
+	return b.opt.GlobalPrefix + name
 }
 
 func init() {
