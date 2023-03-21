@@ -392,12 +392,12 @@ func convertMinioError(err error) error {
 	}
 	errResp := minio.ToErrorResponse(err)
 	if errResp.StatusCode == 404 {
-		return os.ErrNotExist
+    		return fmt.Errorf("%w (%w)", os.ErrNotExist, err)
 	}
-	if errResp.Code != "BucketAlreadyOwnedByYou" {
-		return err
+	if errResp.Code == "BucketAlreadyOwnedByYou" {
+		return nil
 	}
-	return nil
+	return err
 }
 
 // prependGlobalPrefix prepends the GlobalPrefix to the name/prefix
