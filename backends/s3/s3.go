@@ -386,18 +386,18 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 // and turns it into a well known error when possible.
 // If error is not well known, it is returned as is.
 // If error is considered to be ignorable, nil is returned.
-func convertMinioError(e error, isList bool) error {
-	if e == nil {
+func convertMinioError(err error, isList bool) error {
+	if err == nil {
 		return nil
 	}
-	eRes := minio.ToErrorResponse(e)
-	if !isList && eRes.StatusCode == 404 {
-    		return fmt.Errorf("%w: %s", os.ErrNotExist, e.Error())
+	errRes := minio.ToErrorResponse(err)
+	if !isList && errRes.StatusCode == 404 {
+    		return fmt.Errorf("%w: %s", os.ErrNotExist, err.Error())
 	}
-	if eRes.Code == "BucketAlreadyOwnedByYou" {
+	if errRes.Code == "BucketAlreadyOwnedByYou" {
 		return nil
 	}
-	return e
+	return err
 }
 
 // prependGlobalPrefix prepends the GlobalPrefix to the name/prefix
