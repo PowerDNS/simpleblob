@@ -170,7 +170,7 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 	})
 	for obj := range objCh {
 		// Handle error returned by MinIO client
-		if err := convertMinioError(obj.Err); err != nil {
+		if err := convertMinioError(obj.Err, true); err != nil {
 			metricCallErrors.WithLabelValues("list").Inc()
 			return nil, err
 		}
@@ -207,14 +207,14 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 	metricLastCallTimestamp.WithLabelValues("load").SetToCurrentTime()
 
 	obj, err := b.client.GetObject(ctx, b.opt.Bucket, name, minio.GetObjectOptions{})
-	if err = convertMinioError(err); err != nil {
+	if err = convertMinioError(err, false); err != nil {
 		return nil, err
 	} else if obj == nil {
 		return nil, os.ErrNotExist
 	}
 
 	p, err := io.ReadAll(obj)
-	if err = convertMinioError(err); err != nil {
+	if err = convertMinioError(err, false); err != nil {
 		return nil, err
 	}
 	return p, nil
@@ -263,7 +263,7 @@ func (b *Backend) doDelete(ctx context.Context, name string) error {
 	metricLastCallTimestamp.WithLabelValues("delete").SetToCurrentTime()
 
 	err := b.client.RemoveObject(ctx, b.opt.Bucket, name, minio.RemoveObjectOptions{})
-	if err = convertMinioError(err); err != nil {
+	if err = convertMinioError(err, false); err != nil {
 		metricCallErrors.WithLabelValues("delete").Inc()
 	}
 	return err
@@ -366,7 +366,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 
 		err := client.MakeBucket(ctx, opt.Bucket, minio.MakeBucketOptions{Region: opt.Region})
 		if err != nil {
-			if err := convertMinioError(err); err != nil {
+			if err := convertMinioError(err, false); err != nil {
 				return nil, err
 			}
 		}
@@ -386,18 +386,18 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 // and turns it into a well known error when possible.
 // If error is not well known, it is returned as is.
 // If error is considered to be ignorable, nil is returned.
-func convertMinioError(err error) error {
+func convertMinioError(err error, isList bool) error {
 	if err == nil {
 		return nil
 	}
-	errResp := minio.ToErrorResponse(err)
-	if errResp.StatusCode == 404 {
-		return os.ErrNotExist
+	errRes := minio.ToErrorResponse(err)
+	if !isList && errRes.StatusCode == 404 {
+    		return fmt.Errorf("%w: %s", os.ErrNotExist, err.Error())
 	}
-	if errResp.Code != "BucketAlreadyOwnedByYou" {
-		return err
+	if errRes.Code == "BucketAlreadyOwnedByYou" {
+		return nil
 	}
-	return nil
+	return err
 }
 
 // prependGlobalPrefix prepends the GlobalPrefix to the name/prefix
