@@ -110,7 +110,14 @@ func TestBackend_globalprefix(t *testing.T) {
 	b.opt.GlobalPrefix = "v5/"
 
 	tester.DoBackendTests(t, b)
-	assert.Len(t, b.lastMarker, 0)
+	assert.Empty(t, b.lastMarker)
+
+	b = getBackend(ctx, t)
+	b.opt.GlobalPrefix = "v6/"
+	b.opt.UseUpdateMarker = true
+
+	tester.DoBackendTests(t, b)
+	assert.NotEmpty(t, b.lastMarker)
 }
 
 func TestBackend_recursive(t *testing.T) {
