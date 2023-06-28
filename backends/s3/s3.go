@@ -212,6 +212,7 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 	} else if obj == nil {
 		return nil, os.ErrNotExist
 	}
+	defer obj.Close()
 
 	p, err := io.ReadAll(obj)
 	if err = convertMinioError(err, false); err != nil {
