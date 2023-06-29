@@ -66,7 +66,7 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 			}
 		}
 		// This one is not returned by the List command
-		err = b.client.RemoveObject(ctx, b.opt.Bucket, UpdateMarkerFilename, minio.RemoveObjectOptions{})
+		err = b.client.RemoveObject(ctx, b.opt.Bucket, b.markerName, minio.RemoveObjectOptions{})
 		require.NoError(t, err)
 	}
 	t.Cleanup(cleanup)
@@ -107,10 +107,23 @@ func TestBackend_globalprefix(t *testing.T) {
 	defer cancel()
 
 	b := getBackend(ctx, t)
-	b.opt.GlobalPrefix = "v5/"
+	b.setGlobalPrefix("v5/")
 
 	tester.DoBackendTests(t, b)
-	assert.Len(t, b.lastMarker, 0)
+	assert.Empty(t, b.lastMarker)
+}
+
+func TestBackend_globalPrefixAndMarker(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Start the backend over
+	b := getBackend(ctx, t)
+	b.setGlobalPrefix("v6/")
+	b.opt.UseUpdateMarker = true
+
+	tester.DoBackendTests(t, b)
+	assert.NotEmpty(t, b.lastMarker)
 }
 
 func TestBackend_recursive(t *testing.T) {

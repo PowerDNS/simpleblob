@@ -106,10 +106,11 @@ func (o Options) Check() error {
 }
 
 type Backend struct {
-	opt    Options
-	config *minio.Options
-	client *minio.Client
-	log    logr.Logger
+	opt        Options
+	config     *minio.Options
+	client     *minio.Client
+	log        logr.Logger
+	markerName string
 
 	mu         sync.Mutex
 	lastMarker string
@@ -117,12 +118,12 @@ type Backend struct {
 	lastTime   time.Time
 }
 
-func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList, error) {
-	// Prepend global prefix
-	prefix = b.prependGlobalPrefix(prefix)
+func (b *Backend) List(ctx context.Context, prefix string) (blobList simpleblob.BlobList, err error) {
+	// Handle global prefix
+	combinedPrefix := b.prependGlobalPrefix(prefix)
 
 	if !b.opt.UseUpdateMarker {
-		return b.doList(ctx, prefix)
+		return b.doList(ctx, combinedPrefix)
 	}
 
 	m, err := b.Load(ctx, UpdateMarkerFilename)
@@ -144,7 +145,7 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 		return blobs.WithPrefix(prefix), nil
 	}
 
-	blobs, err = b.doList(ctx, "") // We want to cache all, so no prefix
+	blobs, err = b.doList(ctx, b.opt.GlobalPrefix) // We want to cache all, so no prefix
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +163,9 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 	var blobs simpleblob.BlobList
 
 	// Runes to strip from blob names for GlobalPrefix
-	gpEndRune := len(b.opt.GlobalPrefix)
+	// This is fine, because we can trust the API to only return with the prefix.
+	// TODO: trust but verify
+	gpEndIndex := len(b.opt.GlobalPrefix)
 
 	objCh := b.client.ListObjects(ctx, b.opt.Bucket, minio.ListObjectsOptions{
 		Prefix:    prefix,
@@ -177,14 +180,14 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 
 		metricCalls.WithLabelValues("list").Inc()
 		metricLastCallTimestamp.WithLabelValues("list").SetToCurrentTime()
-		if obj.Key == UpdateMarkerFilename {
+		if obj.Key == b.markerName {
 			continue
 		}
 
 		// Strip global prefix from blob
 		blobName := obj.Key
-		if gpEndRune > 0 {
-			blobName = blobName[gpEndRune:]
+		if gpEndIndex > 0 {
+			blobName = blobName[gpEndIndex:]
 		}
 
 		blobs = append(blobs, simpleblob.Blob{Name: blobName, Size: obj.Size})
@@ -379,8 +382,16 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 		client: client,
 		log:    log,
 	}
+	b.setGlobalPrefix(opt.GlobalPrefix)
 
 	return b, nil
+}
+
+// setGlobalPrefix updates the global prefix in b and the cached marker name,
+// so it can be dynamically changed in tests.
+func (b *Backend) setGlobalPrefix(prefix string) {
+	b.opt.GlobalPrefix = prefix
+	b.markerName = b.prependGlobalPrefix(UpdateMarkerFilename)
 }
 
 // convertMinioError takes an error, possibly a minio.ErrorResponse

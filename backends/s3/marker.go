@@ -18,7 +18,7 @@ func (b *Backend) setMarker(ctx context.Context, name, etag string, isDel bool) 
 	}
 	nanos := time.Now().UnixNano()
 	s := fmt.Sprintf("%s:%s:%d:%v", name, etag, nanos, isDel)
-	_, err := b.doStore(ctx, UpdateMarkerFilename, []byte(s))
+	_, err := b.doStore(ctx, b.markerName, []byte(s))
 	if err != nil {
 		return err
 	}
