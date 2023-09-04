@@ -38,7 +38,7 @@ func ServeMinio(ctx context.Context, dir string) (string, func() error, error) {
 	}
 
 	cmd := exec.CommandContext(ctx, cmdname, "server", "--quiet", "--address", addr, dir)
-	cmd.Env = append(cmd.Environ(), "MINIO_BROWSER=off")
+	cmd.Env = append(os.Environ(), "MINIO_BROWSER=off")
 	cmd.Env = append(cmd.Env, "MINIO_ROOT_USER="+AdminUserOrPassword, "MINIO_ROOT_PASSWORD="+AdminUserOrPassword)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

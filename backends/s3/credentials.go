@@ -1,7 +1,6 @@
 package s3
 
 import (
-	"errors"
 	"os"
 
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -31,18 +30,22 @@ func (*K8sSecretProvider) IsExpired() bool {
 // Retrieve implements credentials.Provider.
 // It reads files pointed to by p.AccessKeyFilename and p.SecretKeyFilename.
 func (p *K8sSecretProvider) Retrieve() (value credentials.Value, err error) {
-	load := func(filename string, dst *string) {
-		b, err1 := os.ReadFile(filename)
-		if err1 != nil {
-			err = errors.Join(err, err1)
-			return
+	load := func(filename string, dst *string) error {
+		var b []byte
+		b, err = os.ReadFile(filename)
+		if err != nil {
+			return err
 		}
 
 		*dst = string(b)
+		return nil
 	}
 
-	load(p.AccessKeyFilename, &value.AccessKeyID)
-	load(p.SecretKeyFilename, &value.SecretAccessKey)
+	err = load(p.AccessKeyFilename, &value.AccessKeyID)
+	if err != nil {
+		return value, err
+	}
+	err = load(p.SecretKeyFilename, &value.SecretAccessKey)
 
 	return value, err
 }
