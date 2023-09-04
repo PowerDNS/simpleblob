@@ -55,7 +55,7 @@ func TestPodProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer stop()
+	defer func() { _ = stop() }()
 
 	// First credential files creation.
 	// Keep them empty for now,
