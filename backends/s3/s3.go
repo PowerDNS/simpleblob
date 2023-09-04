@@ -45,6 +45,9 @@ type Options struct {
 	AccessKey string `yaml:"access_key"`
 	SecretKey string `yaml:"secret_key"`
 
+	// Allow using custom credentials provider.
+	Provider K8sSecretProvider `yaml:"kubernetes_secrets,omitempty"`
+
 	// Region defaults to "us-east-1", which also works for Minio
 	Region string `yaml:"region"`
 	Bucket string `yaml:"bucket"`
@@ -93,10 +96,11 @@ type Options struct {
 }
 
 func (o Options) Check() error {
-	if o.AccessKey == "" {
+	hasProvider := o.Provider != K8sSecretProvider{}
+	if !hasProvider && o.AccessKey == "" {
 		return fmt.Errorf("s3 storage.options: access_key is required")
 	}
-	if o.SecretKey == "" {
+	if !hasProvider && o.SecretKey == "" {
 		return fmt.Errorf("s3 storage.options: secret_key is required")
 	}
 	if o.Bucket == "" {
@@ -342,8 +346,13 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 		return nil, fmt.Errorf("unsupported scheme for S3: '%s', use http or https.", u.Scheme)
 	}
 
+	creds := credentials.NewStaticV4(opt.AccessKey, opt.SecretKey, "")
+	if opt.Provider != (K8sSecretProvider{}) {
+		creds = credentials.New(&opt.Provider)
+	}
+
 	cfg := &minio.Options{
-		Creds:     credentials.NewStaticV4(opt.AccessKey, opt.SecretKey, ""),
+		Creds:     creds,
 		Secure:    useSSL,
 		Transport: hc.Transport,
 		Region:    opt.Region,
@@ -404,7 +413,7 @@ func convertMinioError(err error, isList bool) error {
 	}
 	errRes := minio.ToErrorResponse(err)
 	if !isList && errRes.StatusCode == 404 {
-    		return fmt.Errorf("%w: %s", os.ErrNotExist, err.Error())
+		return fmt.Errorf("%w: %s", os.ErrNotExist, err.Error())
 	}
 	if errRes.Code == "BucketAlreadyOwnedByYou" {
 		return nil
