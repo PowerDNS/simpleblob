@@ -25,27 +25,24 @@ type FileSecretsCredentials struct {
 
 // Retrieve implements credentials.Provider.
 // It reads files pointed to by p.AccessKeyFilename and p.SecretKeyFilename.
-func (c *FileSecretsCredentials) Retrieve() (value credentials.Value, err error) {
-	load := func(filename string, dst *string) error {
-		var b []byte
-		b, err = os.ReadFile(filename)
-		if err != nil {
-			return err
-		}
-
-		*dst = string(b)
-		return nil
-	}
-
-	err = load(c.AccessKeyFilename, &value.AccessKeyID)
+func (c *FileSecretsCredentials) Retrieve() (credentials.Value, error) {
+	keyId, err := os.ReadFile(c.AccessKeyFilename)
 	if err != nil {
-		return value, err
+		return credentials.Value{}, err
 	}
-	err = load(c.SecretKeyFilename, &value.SecretAccessKey)
+	secretKey, err := os.ReadFile(c.SecretKeyFilename)
+	if err != nil {
+		return credentials.Value{}, err
+	}
+
+	creds := credentials.Value{
+		AccessKeyID:     string(keyId),
+		SecretAccessKey: string(secretKey),
+	}
 
 	c.SetExpiration(time.Now().Add(time.Second), -1)
 
-	return value, err
+	return creds, err
 }
 
 // IsZero returns true if both c.AccessKeyFilename and c.SecretKeyFilename
