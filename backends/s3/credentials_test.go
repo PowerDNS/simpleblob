@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/PowerDNS/simpleblob/backends/s3"
@@ -17,12 +18,12 @@ func TestPodProvider(t *testing.T) {
 		t.Skip("Skipping test requiring downloading minio")
 	}
 
-	_ = os.Chdir(t.TempDir())
+	tempDir := t.TempDir()
 
 	// Instanciate provider (what we're testing).
 	provider := &s3.FileSecretsCredentials{
-		AccessKeyFilename: "access-key",
-		SecretKeyFilename: "secret-key",
+		AccessKeyFilename: filepath.Join(tempDir, "access-key"),
+		SecretKeyFilename: filepath.Join(tempDir, "secret-key"),
 	}
 
 	// writeFiles creates or overwrites provider files
@@ -51,7 +52,7 @@ func TestPodProvider(t *testing.T) {
 	defer cancel()
 
 	// Create server
-	addr, stop, err := s3testing.ServeMinio(ctx, ".")
+	addr, stop, err := s3testing.ServeMinio(ctx, tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
