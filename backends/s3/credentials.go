@@ -14,13 +14,13 @@ import (
 type FileSecretsCredentials struct {
 	credentials.Expiry
 
-	// Path to the fiel containing the access key,
+	// Path to the field containing the access key,
 	// e.g. /etc/s3-secrets/access-key.
-	AccessKeyFilename string `json:"access_key_file"`
+	AccessKeyFilename string
 
-	// Path to the fiel containing the secret key,
+	// Path to the field containing the secret key,
 	// e.g. /etc/s3-secrets/secret-key.
-	SecretKeyFilename string `json:"secret_key_file"`
+	SecretKeyFilename string
 }
 
 // Retrieve implements credentials.Provider.
@@ -43,12 +43,6 @@ func (c *FileSecretsCredentials) Retrieve() (credentials.Value, error) {
 	c.SetExpiration(time.Now().Add(time.Second), -1)
 
 	return creds, err
-}
-
-// IsZero returns true if both c.AccessKeyFilename and c.SecretKeyFilename
-// are empty.
-func (c *FileSecretsCredentials) IsZero() bool {
-    	return c.AccessKeyFilename == "" && c.SecretKeyFilename == ""
 }
 
 var _ credentials.Provider = new(FileSecretsCredentials)

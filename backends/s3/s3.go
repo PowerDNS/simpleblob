@@ -45,8 +45,13 @@ type Options struct {
 	AccessKey string `yaml:"access_key"`
 	SecretKey string `yaml:"secret_key"`
 
-	// Allow using custom credentials provider.
-	Provider FileSecretsCredentials `yaml:"kubernetes_secrets,omitempty"`
+	// Path to the field containing the access key,
+	// e.g. /etc/s3-secrets/access-key.
+	AccessKeyFilename string `json:"access_key_filename"`
+
+	// Path to the field containing the secret key,
+	// e.g. /etc/s3-secrets/secret-key.
+	SecretKeyFilename string `json:"secret_key_filename"`
 
 	// Region defaults to "us-east-1", which also works for Minio
 	Region string `yaml:"region"`
@@ -96,12 +101,10 @@ type Options struct {
 }
 
 func (o Options) Check() error {
-	hasProvider := !o.Provider.IsZero()
-	if !hasProvider && o.AccessKey == "" {
-		return fmt.Errorf("s3 storage.options: access_key is required")
-	}
-	if !hasProvider && o.SecretKey == "" {
-		return fmt.Errorf("s3 storage.options: secret_key is required")
+	hasSecretsCreds := o.AccessKeyFilename != "" && o.SecretKeyFilename != ""
+	hasStaticCreds := o.AccessKey != "" && o.SecretKey != ""
+	if !hasSecretsCreds && !hasStaticCreds {
+		return fmt.Errorf("s3 storage.options: credentials are required, fill either (access_key and secret_key) or (access_key_filename and secret_key_filename)")
 	}
 	if o.Bucket == "" {
 		return fmt.Errorf("s3 storage.options: bucket is required")
@@ -347,8 +350,11 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	}
 
 	creds := credentials.NewStaticV4(opt.AccessKey, opt.SecretKey, "")
-	if !opt.Provider.IsZero() {
-		creds = credentials.New(&opt.Provider)
+	if opt.AccessKeyFilename != "" {
+		creds = credentials.New(&FileSecretsCredentials{
+			AccessKeyFilename: opt.AccessKeyFilename,
+			SecretKeyFilename: opt.SecretKeyFilename,
+		})
 	}
 
 	cfg := &minio.Options{
