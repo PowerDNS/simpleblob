@@ -20,7 +20,7 @@ func TestPodProvider(t *testing.T) {
 	_ = os.Chdir(t.TempDir())
 
 	// Instanciate provider (what we're testing).
-	provider := &s3.K8sSecretProvider{
+	provider := &s3.FileSecretsCredentials{
 		AccessKeyFilename: "access-key",
 		SecretKeyFilename: "secret-key",
 	}

@@ -46,7 +46,7 @@ type Options struct {
 	SecretKey string `yaml:"secret_key"`
 
 	// Allow using custom credentials provider.
-	Provider K8sSecretProvider `yaml:"kubernetes_secrets,omitempty"`
+	Provider FileSecretsCredentials `yaml:"kubernetes_secrets,omitempty"`
 
 	// Region defaults to "us-east-1", which also works for Minio
 	Region string `yaml:"region"`
@@ -96,7 +96,7 @@ type Options struct {
 }
 
 func (o Options) Check() error {
-	hasProvider := o.Provider != K8sSecretProvider{}
+	hasProvider := o.Provider != FileSecretsCredentials{}
 	if !hasProvider && o.AccessKey == "" {
 		return fmt.Errorf("s3 storage.options: access_key is required")
 	}
@@ -347,7 +347,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	}
 
 	creds := credentials.NewStaticV4(opt.AccessKey, opt.SecretKey, "")
-	if opt.Provider != (K8sSecretProvider{}) {
+	if opt.Provider != (FileSecretsCredentials{}) {
 		creds = credentials.New(&opt.Provider)
 	}
 
