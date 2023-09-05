@@ -96,7 +96,7 @@ type Options struct {
 }
 
 func (o Options) Check() error {
-	hasProvider := o.Provider != FileSecretsCredentials{}
+	hasProvider := !o.Provider.IsZero()
 	if !hasProvider && o.AccessKey == "" {
 		return fmt.Errorf("s3 storage.options: access_key is required")
 	}
@@ -347,7 +347,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	}
 
 	creds := credentials.NewStaticV4(opt.AccessKey, opt.SecretKey, "")
-	if opt.Provider != (FileSecretsCredentials{}) {
+	if !opt.Provider.IsZero() {
 		creds = credentials.New(&opt.Provider)
 	}
 

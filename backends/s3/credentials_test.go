@@ -89,10 +89,14 @@ func TestPodProvider(t *testing.T) {
 	assertClientSuccess(false, "just after init")
 
 	// Write the right keys to the files.
+	// We're not testing expiry here,
+	// and forcing credentials cache to update.
 	writeFiles(s3testing.AdminUserOrPassword)
+	creds.Expire()
 	assertClientSuccess(true, "after changing files content")
 
 	// Change content of the files.
 	writeFiles("badcredentials")
+	creds.Expire()
 	assertClientSuccess(false, "after changing again, to bad credentials")
 }

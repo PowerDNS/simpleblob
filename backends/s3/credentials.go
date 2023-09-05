@@ -2,6 +2,7 @@ package s3
 
 import (
 	"os"
+	"time"
 
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
@@ -11,6 +12,8 @@ import (
 // https://kubernetes.io/docs/tasks/inject-data-application/distribute-credentials-secure
 // and https://docs.docker.com/engine/swarm/secrets.
 type FileSecretsCredentials struct {
+	credentials.Expiry
+
 	// Path to the fiel containing the access key,
 	// e.g. /etc/s3-secrets/access-key.
 	AccessKeyFilename string `json:"access_key_file"`
@@ -18,14 +21,6 @@ type FileSecretsCredentials struct {
 	// Path to the fiel containing the secret key,
 	// e.g. /etc/s3-secrets/secret-key.
 	SecretKeyFilename string `json:"secret_key_file"`
-}
-
-// IsExpired implements credentials.Provider.
-// As there is no totally reliable way to tell
-// if a file was modified accross all filesystems except opening it,
-// we always return true, and p.Retrieve will open it regardless.
-func (*FileSecretsCredentials) IsExpired() bool {
-	return true
 }
 
 // Retrieve implements credentials.Provider.
@@ -48,7 +43,15 @@ func (c *FileSecretsCredentials) Retrieve() (value credentials.Value, err error)
 	}
 	err = load(c.SecretKeyFilename, &value.SecretAccessKey)
 
+	c.SetExpiration(time.Now().Add(time.Second), -1)
+
 	return value, err
+}
+
+// IsZero returns true if both c.AccessKeyFilename and c.SecretKeyFilename
+// are empty.
+func (c *FileSecretsCredentials) IsZero() bool {
+    	return c.AccessKeyFilename == "" && c.SecretKeyFilename == ""
 }
 
 var _ credentials.Provider = new(FileSecretsCredentials)
