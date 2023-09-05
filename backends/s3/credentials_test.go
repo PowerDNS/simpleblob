@@ -2,6 +2,7 @@ package s3_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,10 +15,6 @@ import (
 )
 
 func TestPodProvider(t *testing.T) {
-	if testing.Short() && !s3testing.HasLocalMinio() {
-		t.Skip("Skipping test requiring downloading minio")
-	}
-
 	tempDir := t.TempDir()
 
 	// Instanciate provider (what we're testing).
@@ -53,6 +50,9 @@ func TestPodProvider(t *testing.T) {
 
 	// Create server
 	addr, stop, err := s3testing.ServeMinio(ctx, tempDir)
+	if errors.Is(err, s3testing.ErrMinioNotFound) {
+		t.Skip("minio binary not found locally, make sure it is in PATH")
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
