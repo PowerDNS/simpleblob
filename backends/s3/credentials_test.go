@@ -14,7 +14,7 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-func TestPodProvider(t *testing.T) {
+func TestFileSecretsCredentials(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Instanciate provider (what we're testing).
