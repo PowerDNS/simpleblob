@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/PowerDNS/simpleblob/backends/s3"
 	"github.com/PowerDNS/simpleblob/backends/s3/s3testing"
@@ -45,7 +46,7 @@ func TestFileSecretsCredentials(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	// Create server
