@@ -45,13 +45,15 @@ type Options struct {
 	AccessKey string `yaml:"access_key"`
 	SecretKey string `yaml:"secret_key"`
 
-	// Path to the field containing the access key,
+	// Path to the file containing the access key
+	// as an alternative to AccessKey and SecretKey,
 	// e.g. /etc/s3-secrets/access-key.
-	AccessKeyFilename string `json:"access_key_filename"`
+	AccessKeyFile string `yaml:"access_key_file"`
 
-	// Path to the field containing the secret key,
+	// Path to the field containing the secret key
+	// as an alternative to AccessKey and SecretKey,
 	// e.g. /etc/s3-secrets/secret-key.
-	SecretKeyFilename string `json:"secret_key_filename"`
+	SecretKeyFile string `yaml:"secret_key_file"`
 
 	// Region defaults to "us-east-1", which also works for Minio
 	Region string `yaml:"region"`
@@ -101,7 +103,7 @@ type Options struct {
 }
 
 func (o Options) Check() error {
-	hasSecretsCreds := o.AccessKeyFilename != "" && o.SecretKeyFilename != ""
+	hasSecretsCreds := o.AccessKeyFile != "" && o.SecretKeyFile != ""
 	hasStaticCreds := o.AccessKey != "" && o.SecretKey != ""
 	if !hasSecretsCreds && !hasStaticCreds {
 		return fmt.Errorf("s3 storage.options: credentials are required, fill either (access_key and secret_key) or (access_key_filename and secret_key_filename)")
@@ -350,10 +352,10 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	}
 
 	creds := credentials.NewStaticV4(opt.AccessKey, opt.SecretKey, "")
-	if opt.AccessKeyFilename != "" {
+	if opt.AccessKeyFile != "" {
 		creds = credentials.New(&FileSecretsCredentials{
-			AccessKeyFilename: opt.AccessKeyFilename,
-			SecretKeyFilename: opt.SecretKeyFilename,
+			AccessKeyFile: opt.AccessKeyFile,
+			SecretKeyFile: opt.SecretKeyFile,
 		})
 	}
 

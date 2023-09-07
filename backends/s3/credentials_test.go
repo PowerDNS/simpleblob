@@ -19,8 +19,8 @@ func TestFileSecretsCredentials(t *testing.T) {
 
 	// Instanciate provider (what we're testing).
 	provider := &s3.FileSecretsCredentials{
-		AccessKeyFilename: filepath.Join(tempDir, "access-key"),
-		SecretKeyFilename: filepath.Join(tempDir, "secret-key"),
+		AccessKeyFile: filepath.Join(tempDir, "access-key"),
+		SecretKeyFile: filepath.Join(tempDir, "secret-key"),
 	}
 
 	// writeFiles creates or overwrites provider files
@@ -40,8 +40,8 @@ func TestFileSecretsCredentials(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		writeContent(provider.AccessKeyFilename)
-		writeContent(provider.SecretKeyFilename)
+		writeContent(provider.AccessKeyFile)
+		writeContent(provider.SecretKeyFile)
 	}
 
 	ctx := context.Background()

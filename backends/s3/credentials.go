@@ -16,21 +16,21 @@ type FileSecretsCredentials struct {
 
 	// Path to the field containing the access key,
 	// e.g. /etc/s3-secrets/access-key.
-	AccessKeyFilename string
+	AccessKeyFile string
 
 	// Path to the field containing the secret key,
 	// e.g. /etc/s3-secrets/secret-key.
-	SecretKeyFilename string
+	SecretKeyFile string
 }
 
 // Retrieve implements credentials.Provider.
 // It reads files pointed to by p.AccessKeyFilename and p.SecretKeyFilename.
 func (c *FileSecretsCredentials) Retrieve() (credentials.Value, error) {
-	keyId, err := os.ReadFile(c.AccessKeyFilename)
+	keyId, err := os.ReadFile(c.AccessKeyFile)
 	if err != nil {
 		return credentials.Value{}, err
 	}
-	secretKey, err := os.ReadFile(c.SecretKeyFilename)
+	secretKey, err := os.ReadFile(c.SecretKeyFile)
 	if err != nil {
 		return credentials.Value{}, err
 	}
