@@ -14,11 +14,11 @@ import (
 type FileSecretsCredentials struct {
 	credentials.Expiry
 
-	// Path to the field containing the access key,
+	// Path to the file containing the access key,
 	// e.g. /etc/s3-secrets/access-key.
 	AccessKeyFile string
 
-	// Path to the field containing the secret key,
+	// Path to the file containing the secret key,
 	// e.g. /etc/s3-secrets/secret-key.
 	SecretKeyFile string
 }
