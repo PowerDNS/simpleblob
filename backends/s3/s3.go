@@ -117,7 +117,7 @@ func (o Options) Check() error {
 	if !hasSecretsCreds && !hasStaticCreds {
 		return fmt.Errorf("s3 storage.options: credentials are required, fill either (access_key and secret_key) or (access_key_filename and secret_key_filename)")
 	}
-	if d := o.SecretsRefreshInterval; hasSecretsCreds && d != 0 && d < time.Second {
+	if hasSecretsCreds && o.SecretsRefreshInterval < time.Second {
 		return fmt.Errorf("s3 storage.options: field refresh_secrets is required when using secret credentials")
 	}
 	if o.Bucket == "" {
