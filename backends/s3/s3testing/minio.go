@@ -48,6 +48,8 @@ func ServeMinio(ctx context.Context, dir string) (string, func() error, error) {
 
 	// Wait for server to accept requests.
 	readyURL := "http://" + addr + "/minio/health/ready"
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	ticker := time.NewTicker(30 * time.Millisecond)
 	defer ticker.Stop()
 	for {
