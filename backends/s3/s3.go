@@ -50,7 +50,7 @@ type Options struct {
 	// e.g. /etc/s3-secrets/access-key.
 	AccessKeyFile string `yaml:"access_key_file"`
 
-	// Path to the field containing the secret key
+	// Path to the file containing the secret key
 	// as an alternative to AccessKey and SecretKey,
 	// e.g. /etc/s3-secrets/secret-key.
 	SecretKeyFile string `yaml:"secret_key_file"`
