@@ -21,6 +21,9 @@ type FileSecretsCredentials struct {
 	// Path to the file containing the secret key,
 	// e.g. /etc/s3-secrets/secret-key.
 	SecretKeyFile string
+
+	// Time between each secrets retrieval.
+	RefreshInterval time.Duration
 }
 
 // Retrieve implements credentials.Provider.
@@ -40,7 +43,7 @@ func (c *FileSecretsCredentials) Retrieve() (credentials.Value, error) {
 		SecretAccessKey: string(secretKey),
 	}
 
-	c.SetExpiration(time.Now().Add(time.Second), -1)
+	c.SetExpiration(time.Now().Add(c.RefreshInterval), -1)
 
 	return creds, err
 }

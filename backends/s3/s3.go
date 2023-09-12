@@ -37,6 +37,9 @@ const (
 	// DefaultUpdateMarkerForceListInterval is the default value for
 	// UpdateMarkerForceListInterval.
 	DefaultUpdateMarkerForceListInterval = 5 * time.Minute
+	// DefaultSecretsRefreshInterval is the default value for RefreshSecrets.
+	// It should not be too high so as to retrieve secrets regularly.
+	DefaultSecretsRefreshInterval = 15 * time.Second
 )
 
 // Options describes the storage options for the S3 backend
@@ -54,6 +57,12 @@ type Options struct {
 	// as an alternative to AccessKey and SecretKey,
 	// e.g. /etc/s3-secrets/secret-key.
 	SecretKeyFile string `yaml:"secret_key_file"`
+
+	// Time between each secrets retrieval.
+	// Minimum is 1s, lower values are considered an error.
+	// It defaults to DefaultSecretsRefreshInterval,
+	// which is currently 15s.
+	SecretsRefreshInterval time.Duration `yaml:"secrets_refresh_interval"`
 
 	// Region defaults to "us-east-1", which also works for Minio
 	Region string `yaml:"region"`
@@ -107,6 +116,9 @@ func (o Options) Check() error {
 	hasStaticCreds := o.AccessKey != "" && o.SecretKey != ""
 	if !hasSecretsCreds && !hasStaticCreds {
 		return fmt.Errorf("s3 storage.options: credentials are required, fill either (access_key and secret_key) or (access_key_filename and secret_key_filename)")
+	}
+	if d := o.SecretsRefreshInterval; hasSecretsCreds && d != 0 && d < time.Second {
+		return fmt.Errorf("s3 storage.options: field refresh_secrets is required when using secret credentials")
 	}
 	if o.Bucket == "" {
 		return fmt.Errorf("s3 storage.options: bucket is required")
@@ -298,6 +310,9 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	if opt.EndpointURL == "" {
 		opt.EndpointURL = DefaultEndpointURL
 	}
+	if opt.SecretsRefreshInterval == 0 {
+		opt.SecretsRefreshInterval = DefaultSecretsRefreshInterval
+	}
 	if err := opt.Check(); err != nil {
 		return nil, err
 	}
@@ -354,8 +369,9 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	creds := credentials.NewStaticV4(opt.AccessKey, opt.SecretKey, "")
 	if opt.AccessKeyFile != "" {
 		creds = credentials.New(&FileSecretsCredentials{
-			AccessKeyFile: opt.AccessKeyFile,
-			SecretKeyFile: opt.SecretKeyFile,
+			AccessKeyFile:   opt.AccessKeyFile,
+			SecretKeyFile:   opt.SecretKeyFile,
+			RefreshInterval: opt.SecretsRefreshInterval,
 		})
 	}
 
