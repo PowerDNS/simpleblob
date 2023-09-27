@@ -40,6 +40,8 @@ const (
 	// DefaultSecretsRefreshInterval is the default value for RefreshSecrets.
 	// It should not be too high so as to retrieve secrets regularly.
 	DefaultSecretsRefreshInterval = 15 * time.Second
+	// DefaultDisableContentMd5 : disable sending the Content-MD5 header
+	DefaultDisableContentMd5 = false
 )
 
 // Options describes the storage options for the S3 backend
@@ -81,6 +83,9 @@ type Options struct {
 	// EndpointURL can be set to something like "http://localhost:9000" when using Minio
 	// or "https://s3.amazonaws.com" for AWS S3.
 	EndpointURL string `yaml:"endpoint_url"`
+
+	// DisableContentMd5 defines whether to disable sending the Content-MD5 header
+	DisableContentMd5 bool `yaml:"disable_send_content_md5"`
 
 	// TLS allows customising the TLS configuration
 	// See https://github.com/PowerDNS/go-tlsconfig for the available options
@@ -262,9 +267,14 @@ func (b *Backend) doStore(ctx context.Context, name string, data []byte) (minio.
 	metricCalls.WithLabelValues("store").Inc()
 	metricLastCallTimestamp.WithLabelValues("store").SetToCurrentTime()
 
-	info, err := b.client.PutObject(ctx, b.opt.Bucket, name, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{
+	putObjectOptions := minio.PutObjectOptions{
 		NumThreads: 3,
-	})
+	}
+	if !b.opt.DisableContentMd5 {
+		putObjectOptions.SendContentMd5 = true
+	}
+
+	info, err := b.client.PutObject(ctx, b.opt.Bucket, name, bytes.NewReader(data), int64(len(data)), putObjectOptions)
 	if err != nil {
 		metricCallErrors.WithLabelValues("store").Inc()
 	}
