@@ -1,6 +1,6 @@
 module github.com/PowerDNS/simpleblob
 
-go 1.18
+go 1.20
 
 require (
 	github.com/PowerDNS/go-tlsconfig v0.0.0-20221101135152-0956853b28df
@@ -10,6 +10,7 @@ require (
 	github.com/nats-io/nats.go v1.30.2
 	github.com/prometheus/client_golang v1.13.0
 	github.com/stretchr/testify v1.8.1
+	golang.org/x/crypto v0.13.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
@@ -40,7 +41,6 @@ require (
 	github.com/prometheus/procfs v0.8.0 // indirect
 	github.com/rs/xid v1.5.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
-	golang.org/x/crypto v0.13.0 // indirect
 	golang.org/x/net v0.14.0 // indirect
 	golang.org/x/sys v0.12.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
