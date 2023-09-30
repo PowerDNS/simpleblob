@@ -2,6 +2,7 @@ package nats
 
 import (
 	"context"
+	"github.com/PowerDNS/simpleblob/tester"
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats-server/v2/test"
 	"os"
@@ -84,4 +85,19 @@ func TestBackend_Store_Load_List_Delete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestBackend(t *testing.T) {
+	dir, err := os.MkdirTemp(os.TempDir(), "simpleblob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	srv := commonTestServer(dir)
+	defer srv.Shutdown()
+	b, err := New(context.Background(), commonTestOpts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tester.DoBackendTests(t, b)
 }

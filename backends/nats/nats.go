@@ -1,13 +1,16 @@
 package nats
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
 	"github.com/PowerDNS/simpleblob"
 	"github.com/go-logr/logr"
 	"github.com/nats-io/nats.go"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -215,10 +218,20 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 		return nil, err
 	}
 	if len(b.opt.internalEncryptionKeyBytes) == 0 {
-		return obj.GetBytes(name)
+		bytes, err := obj.GetBytes(name)
+		if err != nil {
+			if errors.Is(err, nats.ErrObjectNotFound) {
+				return nil, os.ErrNotExist
+			}
+			return nil, err
+		}
+		return bytes, nil
 	} else {
 		ciphertext, err := obj.GetBytes(name)
 		if err != nil {
+			if errors.Is(err, nats.ErrObjectNotFound) {
+				return nil, os.ErrNotExist
+			}
 			return nil, err
 		}
 		return helperDecrypt(b.opt.internalEncryptionKeyBytes, ciphertext)
@@ -236,7 +249,9 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 
 func (b *Backend) doStore(ctx context.Context, name string, data []byte) (*nats.ObjectInfo, error) {
 	// Optionally encrypt
+	var plaintextSize int
 	if len(b.opt.internalEncryptionKeyBytes) > 0 {
+		plaintextSize = len(data)
 		ciphertext, err := helperEncrypt(b.opt.internalEncryptionKeyBytes, data)
 		if err != nil {
 			return nil, err
@@ -252,7 +267,20 @@ func (b *Backend) doStore(ctx context.Context, name string, data []byte) (*nats.
 	if err != nil {
 		return nil, err
 	}
-	return obj.PutBytes(name, data)
+	if len(b.opt.internalEncryptionKeyBytes) == 0 {
+		return obj.PutBytes(name, data)
+	}
+	lenCipher, err := helperEncrypt(b.opt.internalEncryptionKeyBytes, []byte(strconv.Itoa(plaintextSize)))
+	if err != nil {
+		return nil, err
+	}
+	meta := make(map[string]string)
+	meta["lenCipher"] = hex.EncodeToString(lenCipher)
+	putMeta := nats.ObjectMeta{
+		Name:     name,
+		Metadata: meta,
+	}
+	return obj.Put(&putMeta, bytes.NewReader(data))
 }
 
 // Delete removes the object identified by name from the S3 Bucket
@@ -288,6 +316,9 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 	}
 	objList, err := obj.List()
 	if err != nil {
+		if errors.Is(err, nats.ErrNoObjectsFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	gpEndIndex := len(b.opt.GlobalPrefix)
@@ -299,7 +330,23 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 		if gpEndIndex > 0 {
 			blobName = blobName[gpEndIndex:]
 		}
-		blobs = append(blobs, simpleblob.Blob{Name: blobName, Size: int64(objI.Size)})
+		if len(b.opt.internalEncryptionKeyBytes) == 0 {
+			blobs = append(blobs, simpleblob.Blob{Name: blobName, Size: int64(objI.Size)})
+		} else {
+			cipherLen, err := hex.DecodeString(objI.Metadata["lenCipher"])
+			if err != nil {
+				return nil, err
+			}
+			plainLen, err := helperDecrypt(b.opt.internalEncryptionKeyBytes, cipherLen)
+			if err != nil {
+				return nil, err
+			}
+			sz, err := strconv.ParseInt(string(plainLen), 10, 64)
+			if err != nil {
+				return nil, err
+			}
+			blobs = append(blobs, simpleblob.Blob{Name: blobName, Size: sz})
+		}
 	}
 	sort.Sort(blobs)
 	return blobs, nil
