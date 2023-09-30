@@ -82,6 +82,10 @@ type Options struct {
 	GlobalPrefix string `yaml:"global_prefix"`
 	// EncryptionKey -  key (hex format,256 bit) for encryption at rest
 	EncryptionKey string `yaml:"encryptionKey"`
+	// S3 Compatability
+	// PrefixFolders can be enabled to make List operations show nested prefixes as folders
+	// instead of recursively listing all contents of nested prefixes
+	PrefixFolders bool `yaml:"prefix_folders"`
 	// Internally managed options
 	// Auth type flag set internally by checkCredentialsAvailability()
 	internalUseAuthType authType
@@ -329,6 +333,11 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 		blobName := objI.Name
 		if gpEndIndex > 0 {
 			blobName = blobName[gpEndIndex:]
+		}
+		if b.opt.PrefixFolders && strings.Contains(blobName, "/") {
+			folders := strings.SplitAfter(blobName, "/")
+			blobs = append(blobs, simpleblob.Blob{Name: strings.Join(folders[0:len(folders)-1], ""), Size: 0})
+			continue
 		}
 		if len(b.opt.internalEncryptionKeyBytes) == 0 {
 			blobs = append(blobs, simpleblob.Blob{Name: blobName, Size: int64(objI.Size)})
