@@ -34,6 +34,8 @@ const (
 	token
 	nkey
 	credentials
+	nkeyJwt
+	jwt
 	invalid
 )
 
@@ -50,6 +52,7 @@ type Options struct {
 	NatsToken               string `yaml:"natsToken"`
 	NatsNkeySeedFilePath    string `yaml:"natsNkeySeedFilePath"`
 	NatsCredentialsFilePath string `yaml:"natsCredentialsFilePath"`
+	NatsJWTKeyFilePath      string `yaml:"natsJWTKeyFilePath"`
 	// TLS Options
 	// NatsTLSRootCA Specify a custom root CA file (e.g. for self-signed certs)
 	NatsTLSRootCA string `yaml:"natsTLSRootCA"`
@@ -151,7 +154,26 @@ func (o Options) checkCredentialsAvailability() error {
 			o.internalUseAuthType = invalid
 			return err
 		}
-		o.internalUseAuthType = nkey
+		if o.NatsJWTKeyFilePath == "" {
+			o.internalUseAuthType = nkey
+			return nil
+		}
+		err = fileExistsAndIsReadable(o.NatsJWTKeyFilePath)
+		if err != nil {
+			o.internalUseAuthType = invalid
+			return err
+		}
+		o.internalUseAuthType = nkeyJwt
+		return nil
+	}
+	// JWT only
+	if o.NatsJWTKeyFilePath != "" {
+		err := fileExistsAndIsReadable(o.NatsJWTKeyFilePath)
+		if err != nil {
+			o.internalUseAuthType = invalid
+			return err
+		}
+		o.internalUseAuthType = jwt
 		return nil
 	}
 	// Credentials specified
@@ -351,6 +373,10 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 			return nil, err
 		}
 		ncOptions = append(ncOptions, nk)
+	}
+	if opt.internalUseAuthType == nkeyJwt {
+		cr := nats.UserCredentials(opt.NatsJWTKeyFilePath, opt.NatsNkeySeedFilePath)
+		ncOptions = append(ncOptions, cr)
 	}
 	if opt.internalUseAuthType == credentials {
 		cr := nats.UserCredentials(opt.NatsCredentialsFilePath)
