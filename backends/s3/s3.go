@@ -421,29 +421,36 @@ func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, er
 // a blob located on an S3 server.
 func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, error) {
 	pr, pw := io.Pipe()
-	wrap := &writerWrapper{backend: b, pw: pw, ctx: ctx, name: name}
-	wrap.wg.Add(1)
+	wrap := &writerWrapper{
+		ctx:     ctx,
+		backend: b,
+		name:    name,
+		pw:      pw,
+		done:    make(chan struct{}, 1),
+	}
 	go func() {
-		defer wrap.wg.Done()
-		wrap.info, wrap.err = b.doStoreReader(ctx, name, pr, -1, true, true)
+		var err error
+		wrap.info, err = b.doStoreReader(ctx, name, pr, -1)
+		_ = pr.CloseWithError(err)
+		wrap.done <- struct{}{}
 	}()
 	return wrap, nil
 }
 
 // A writerWrapper implements io.WriteCloser and is returned by (*Backend).NewWriter.
 type writerWrapper struct {
-	// Basic data we need for the transfer.
-	ctx     context.Context // we need this for the marker in Close
 	backend *Backend
-	name    string
+	done    chan struct{}
 
-	// Writes are sent to this pipe and then written to S3 in a background goroutine.
-	pw *io.PipeWriter
-	wg sync.WaitGroup
-
-	// These are only set after Close has been called on the pipe.
+	// We need to keep these around
+	// to write the marker in Close.
+	ctx  context.Context
 	info minio.UploadInfo
-	err  error
+	name string
+
+	// Writes are sent to this pipe
+	// and then written to S3 in a background goroutine.
+	pw *io.PipeWriter
 }
 
 func (w *writerWrapper) Write(p []byte) (int, error) {
@@ -452,11 +459,14 @@ func (w *writerWrapper) Write(p []byte) (int, error) {
 
 func (w *writerWrapper) Close() error {
 	err := w.pw.Close()
-	w.wg.Wait()
-	if w.err != nil {
-		return w.err
-	}
 	if err != nil {
+		return err
+	}
+	select {
+	case <-w.done:
+	case <-w.ctx.Done():
+		err := w.ctx.Err()
+		_ = w.pw.CloseWithError(err)
 		return err
 	}
 	return w.backend.setMarker(w.ctx, w.name, w.info.ETag, false)
