@@ -446,15 +446,15 @@ func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, e
 // A writerWrapper implements io.WriteCloser and is returned by (*Backend).NewWriter.
 type writerWrapper struct {
 	// Basic data we need for the transfer.
-	ctx     context.Context
+	ctx     context.Context // we need this for the marker in Close
 	backend *Backend
 	name    string
 
-	// Writer-only logic variables.
+	// Writes are sent to this pipe and then written to S3 in a background goroutine.
 	pw *io.PipeWriter
 	wg sync.WaitGroup
 
-	// Information to be gathered after transfer.
+	// These are only set after Close has been called on the pipe.
 	info minio.UploadInfo
 	err  error
 }
