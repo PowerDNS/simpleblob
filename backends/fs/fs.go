@@ -12,6 +12,10 @@ import (
 	"github.com/PowerDNS/simpleblob"
 )
 
+// ignoreSuffix is the suffix to use internally
+// to hide a file from (*Backend).List.
+const ignoreSuffix = ".tmp"
+
 // Options describes the storage options for the fs backend
 type Options struct {
 	RootPath string `yaml:"root_path"`
@@ -72,7 +76,7 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 		return os.ErrPermission
 	}
 	fullPath := filepath.Join(b.rootPath, name)
-	tmpPath := fullPath + ".tmp" // ignored by List()
+	tmpPath := fullPath + ignoreSuffix // ignored by List()
 	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
 		return err
 	}
@@ -99,14 +103,13 @@ func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, er
 	return os.Open(fullPath)
 }
 
-
 // NewWriter provides an optimized way to write to a file.
 func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, error) {
 	if !allowedName(name) {
 		return nil, os.ErrPermission
 	}
 	fullPath := filepath.Join(b.rootPath, name)
-	return os.OpenFile(fullPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	return createAtomic(fullPath)
 }
 
 func allowedName(name string) bool {
@@ -117,7 +120,7 @@ func allowedName(name string) bool {
 	if strings.HasPrefix(name, ".") {
 		return false
 	}
-	if strings.HasSuffix(name, ".tmp") {
+	if strings.HasSuffix(name, ignoreSuffix) {
 		return false // used for our temp files when writing
 	}
 	return true
