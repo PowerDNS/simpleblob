@@ -200,8 +200,12 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 // Load retrieves the content of the object identified by name from S3 Bucket
 // configured in b.
 func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
-	r, err := b.doLoadReader(ctx, name, true, true)
+	metricCalls.WithLabelValues("load").Inc()
+	metricLastCallTimestamp.WithLabelValues("load").SetToCurrentTime()
+
+	r, err := b.doLoadReader(ctx, name)
 	if err != nil {
+		metricCallErrors.WithLabelValues("load").Inc()
 		return nil, err
 	}
 	defer r.Close()
@@ -214,20 +218,11 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 	return p, nil
 }
 
-func (b *Backend) doLoadReader(ctx context.Context, name string, withPrefix, withMetrics bool) (io.ReadCloser, error) {
-	if withPrefix {
-		name = b.prependGlobalPrefix(name)
-	}
-	if withMetrics {
-		metricCalls.WithLabelValues("load").Inc()
-		metricLastCallTimestamp.WithLabelValues("load").SetToCurrentTime()
-	}
+func (b *Backend) doLoadReader(ctx context.Context, name string) (io.ReadCloser, error) {
+	name = b.prependGlobalPrefix(name)
 
 	obj, err := b.client.GetObject(ctx, b.opt.Bucket, name, minio.GetObjectOptions{})
 	if err = convertMinioError(err); err != nil {
-		if withMetrics {
-			metricCallErrors.WithLabelValues("load").Inc()
-		}
 		return nil, err
 	}
 	if obj == nil {
@@ -235,17 +230,11 @@ func (b *Backend) doLoadReader(ctx context.Context, name string, withPrefix, wit
 	}
 	info, err := obj.Stat()
 	if err = convertMinioError(err); err != nil {
-		if withMetrics {
-			metricCallErrors.WithLabelValues("load").Inc()
-		}
 		return nil, err
 	}
 	if info.Key == "" {
 		// minio will return an object with empty fields when name
 		// is not present in bucket.
-		if withMetrics {
-			metricCallErrors.WithLabelValues("load").Inc()
-		}
 		return nil, os.ErrNotExist
 	}
 	return obj, nil
@@ -254,33 +243,31 @@ func (b *Backend) doLoadReader(ctx context.Context, name string, withPrefix, wit
 // Store sets the content of the object identified by name to the content
 // of data, in the S3 Bucket configured in b.
 func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
+	metricCalls.WithLabelValues("store").Inc()
+	metricLastCallTimestamp.WithLabelValues("store").SetToCurrentTime()
+
 	info, err := b.doStore(ctx, name, data)
 	if err != nil {
+		metricCallErrors.WithLabelValues("store").Inc()
 		return err
 	}
 	return b.setMarker(ctx, name, info.ETag, false)
 }
 
 func (b *Backend) doStore(ctx context.Context, name string, data []byte) (minio.UploadInfo, error) {
-	return b.doStoreReader(ctx, name, bytes.NewReader(data), int64(len(data)), true, true)
+	return b.doStoreReader(ctx, name, bytes.NewReader(data), int64(len(data)))
 }
 
-func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader, size int64, withPrefix, withMetrics bool) (minio.UploadInfo, error) {
-	if withPrefix {
-		name = b.prependGlobalPrefix(name)
-	}
-	if withMetrics {
-		metricCalls.WithLabelValues("store").Inc()
-		metricLastCallTimestamp.WithLabelValues("store").SetToCurrentTime()
-	}
+// doStoreReader stores data with key name in S3, using r as a source for data.
+// The value of size may be -1, in case the size is not known.
+func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader, size int64) (minio.UploadInfo, error) {
+	name = b.prependGlobalPrefix(name)
 
+	// minio accepts size == -1, meaning the size is unknown.
 	info, err := b.client.PutObject(ctx, b.opt.Bucket, name, r, size, minio.PutObjectOptions{
 		NumThreads: 3,
 	})
 	err = convertMinioError(err)
-	if err != nil && withMetrics {
-		metricCallErrors.WithLabelValues("store").Inc()
-	}
 	return info, err
 }
 
@@ -423,7 +410,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 // NewReader satisfies ReaderStorage and provides a read streaming interface to
 // a blob located on an S3 server.
 func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, error) {
-	r, err := b.doLoadReader(ctx, name, true, true)
+	r, err := b.doLoadReader(ctx, name)
 	if err != nil {
 		return nil, err
 	}
