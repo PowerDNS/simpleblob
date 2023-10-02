@@ -64,6 +64,8 @@ func DoBackendTests(t *testing.T, b simpleblob.Interface) {
 	assert.NoError(t, err)
 	assert.Equal(t, data, p)
 	assert.NoError(t, r.Close())
+	_, err = r.Read(make([]byte, 0, 16)) // Cannot read again
+	assert.Error(t, err)
 
 	// Check overwritten data
 	data, err = b.Load(ctx, "bar-1")
@@ -89,7 +91,11 @@ func DoBackendTests(t *testing.T, b simpleblob.Interface) {
 	buzz := []byte("buzz")
 	n, err := w.Write(buzz)
 	assert.NoError(t, err)
-	assert.NoError(t, w.Close())
+	ls, err = b.List(ctx, "") // File should not exist before close
+	assert.NoError(t, err)
+	assert.NotContains(t, ls.Names(), "fizz")
+	assert.Equal(t, ls.Names(), []string{"bar-1", "bar-2", "foo-1"})
+	assert.NoError(t, w.Close()) // Normal close
 	assert.EqualValues(t, len(buzz), n)
 	data, err = b.Load(ctx, "fizz")
 	assert.NoError(t, err)
@@ -97,6 +103,8 @@ func DoBackendTests(t *testing.T, b simpleblob.Interface) {
 	ls, err = b.List(ctx, "")
 	assert.NoError(t, err)
 	assert.Contains(t, ls.Names(), "fizz")
+	_, err = w.Write(buzz) // Cannot write after close
+	assert.Error(t, err)
 
 	// Load non-existing
 	_, err = b.Load(ctx, "does-not-exist")
