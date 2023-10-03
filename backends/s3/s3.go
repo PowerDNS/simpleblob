@@ -3,8 +3,10 @@ package s3
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/minio/minio-go/v7/pkg/encrypt"
 	"io"
 	"net/url"
 	"os"
@@ -42,6 +44,8 @@ const (
 	DefaultSecretsRefreshInterval = 15 * time.Second
 	// DefaultDisableContentMd5 : disable sending the Content-MD5 header
 	DefaultDisableContentMd5 = false
+	// DefaultSSEKey is the default key for SSE-C, empty string means SSE-C not used
+	DefaultSSEKey = ""
 )
 
 // Options describes the storage options for the S3 backend
@@ -86,6 +90,9 @@ type Options struct {
 
 	// DisableContentMd5 defines whether to disable sending the Content-MD5 header
 	DisableContentMd5 bool `yaml:"disable_send_content_md5"`
+
+	// SSEKey hex value of key to use for SSE-C
+	SSEKey string `yaml:"sse_key"`
 
 	// TLS allows customising the TLS configuration
 	// See https://github.com/PowerDNS/go-tlsconfig for the available options
@@ -235,7 +242,22 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 	metricCalls.WithLabelValues("load").Inc()
 	metricLastCallTimestamp.WithLabelValues("load").SetToCurrentTime()
 
-	obj, err := b.client.GetObject(ctx, b.opt.Bucket, name, minio.GetObjectOptions{})
+	getObjectOptions := minio.GetObjectOptions{}
+
+	if b.opt.SSEKey != "" {
+		sseCBytes, err := hex.DecodeString(b.opt.SSEKey)
+		if err != nil {
+			return nil, err
+		}
+		sseC, err := encrypt.NewSSEC(sseCBytes)
+		if err != nil {
+			return nil, err
+		}
+		getObjectOptions.ServerSideEncryption = sseC
+	}
+
+	obj, err := b.client.GetObject(ctx, b.opt.Bucket, name, getObjectOptions)
+
 	if err = convertMinioError(err, false); err != nil {
 		return nil, err
 	} else if obj == nil {
@@ -272,6 +294,17 @@ func (b *Backend) doStore(ctx context.Context, name string, data []byte) (minio.
 	}
 	if !b.opt.DisableContentMd5 {
 		putObjectOptions.SendContentMd5 = true
+	}
+	if b.opt.SSEKey != "" {
+		sseCBytes, err := hex.DecodeString(b.opt.SSEKey)
+		if err != nil {
+			return minio.UploadInfo{}, err
+		}
+		sseC, err := encrypt.NewSSEC(sseCBytes)
+		if err != nil {
+			return minio.UploadInfo{}, err
+		}
+		putObjectOptions.ServerSideEncryption = sseC
 	}
 
 	info, err := b.client.PutObject(ctx, b.opt.Bucket, name, bytes.NewReader(data), int64(len(data)), putObjectOptions)
@@ -322,6 +355,9 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	}
 	if opt.SecretsRefreshInterval == 0 {
 		opt.SecretsRefreshInterval = DefaultSecretsRefreshInterval
+	}
+	if opt.SSEKey == "" {
+		opt.SSEKey = DefaultSSEKey
 	}
 	if err := opt.Check(); err != nil {
 		return nil, err
