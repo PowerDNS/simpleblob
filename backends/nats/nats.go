@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -100,16 +99,10 @@ type Options struct {
 }
 
 type Backend struct {
-	opt Options
-	//config     *minio.Options
+	opt        Options
 	nc         *nats.Conn
 	log        logr.Logger
 	markerName string
-
-	mu         sync.Mutex
-	lastMarker string
-	lastList   simpleblob.BlobList
-	lastTime   time.Time
 }
 
 // Check TLS params are available
@@ -209,7 +202,7 @@ func (b *Backend) setGlobalPrefix(prefix string) {
 	b.opt.GlobalPrefix = prefix
 }
 
-// Load retrieves the content of the object identified by name from S3 Bucket
+// Load retrieves the content of the object identified by name from JetStream
 // configured in b.
 func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 	name = b.prependGlobalPrefix(name)
@@ -222,14 +215,14 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 		return nil, err
 	}
 	if len(b.opt.internalEncryptionKeyBytes) == 0 {
-		bytes, err := obj.GetBytes(name)
+		dat, err := obj.GetBytes(name)
 		if err != nil {
 			if errors.Is(err, nats.ErrObjectNotFound) {
 				return nil, os.ErrNotExist
 			}
 			return nil, err
 		}
-		return bytes, nil
+		return dat, nil
 	} else {
 		ciphertext, err := obj.GetBytes(name)
 		if err != nil {
@@ -243,7 +236,7 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 }
 
 // Store sets the content of the object identified by name to the content
-// of data, in the S3 Bucket configured in b.
+// of data, in the JetStream configured in b.
 func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 	// Prepend global prefix
 	name = b.prependGlobalPrefix(name)
@@ -287,7 +280,7 @@ func (b *Backend) doStore(ctx context.Context, name string, data []byte) (*nats.
 	return obj.Put(&putMeta, bytes.NewReader(data))
 }
 
-// Delete removes the object identified by name from the S3 Bucket
+// Delete removes the object identified by name from JetStream
 // configured in b.
 func (b *Backend) Delete(ctx context.Context, name string) error {
 	name = b.prependGlobalPrefix(name)
