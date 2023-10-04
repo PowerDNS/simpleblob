@@ -127,6 +127,8 @@ func TestBackend_globalPrefixAndMarker(t *testing.T) {
 }
 
 func TestBackend_recursive(t *testing.T) {
+    	// NB: Those tests are for PrefixFolders, a deprecated options.
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -163,6 +165,12 @@ func TestBackend_recursive(t *testing.T) {
 	ls, err = b.List(ctx, "")
 	assert.NoError(t, err)
 	assert.Equal(t, ls.Names(), []string{"bar-1", "bar-2", "foo/bar-3"})
+
+	// List all - HideFolders enabled
+	b.opt.HideFolders = true
+	ls, err = b.List(ctx, "")
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"bar-1", "bar-2"}, ls.Names())
 
 	assert.Len(t, b.lastMarker, 0)
 }

@@ -78,7 +78,14 @@ type Options struct {
 
 	// PrefixFolders can be enabled to make List operations show nested prefixes as folders
 	// instead of recursively listing all contents of nested prefixes
+	//
+	// Deprecated: This option does not reflect our desire to treat blob names as keys.
+	// Please do not use it.
 	PrefixFolders bool `yaml:"prefix_folders"`
+
+	// HideFolders is an S3-specific optimization, allowing to hide all keys that
+	// have a separator '/' in their names.
+	HideFolders bool `yaml:"hide_folders"`
 
 	// EndpointURL can be set to something like "http://localhost:9000" when using Minio
 	// or "https://s3.amazonaws.com" for AWS S3.
@@ -195,7 +202,7 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 
 	objCh := b.client.ListObjects(ctx, b.opt.Bucket, minio.ListObjectsOptions{
 		Prefix:    prefix,
-		Recursive: !b.opt.PrefixFolders,
+		Recursive: !b.opt.PrefixFolders && !b.opt.HideFolders,
 	})
 	for obj := range objCh {
 		// Handle error returned by MinIO client
@@ -207,6 +214,10 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 		metricCalls.WithLabelValues("list").Inc()
 		metricLastCallTimestamp.WithLabelValues("list").SetToCurrentTime()
 		if obj.Key == b.markerName {
+			continue
+		}
+
+		if b.opt.HideFolders && strings.Contains(obj.Key, "/") {
 			continue
 		}
 
