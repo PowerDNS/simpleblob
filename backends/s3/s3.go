@@ -217,7 +217,7 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 			continue
 		}
 
-		if b.opt.HideFolders && strings.Contains(obj.Key, "/") {
+		if b.opt.HideFolders && strings.HasSuffix(obj.Key, "/") {
 			continue
 		}
 
