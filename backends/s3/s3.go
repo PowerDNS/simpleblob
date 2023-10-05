@@ -85,6 +85,13 @@ type Options struct {
 
 	// HideFolders is an S3-specific optimization, allowing to hide all keys that
 	// have a separator '/' in their names.
+	// In case a prefix representing a folder is provided to List,
+	// that folder will be explored, and its subfolders hidden.
+	//
+	// Moreover, please note that regardless of this option,
+	// working with folders with S3 is flaky,
+	// because a `foo` key will shadow all `foo/*` keys while listing,
+	// even though those `foo/*` keys exist and they hold the values they're expected to.
 	HideFolders bool `yaml:"hide_folders"`
 
 	// EndpointURL can be set to something like "http://localhost:9000" when using Minio
