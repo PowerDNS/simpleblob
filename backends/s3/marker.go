@@ -18,7 +18,7 @@ func (b *Backend) setMarker(ctx context.Context, name, etag string, isDel bool) 
 	}
 	nanos := time.Now().UnixNano()
 	s := fmt.Sprintf("%s:%s:%d:%v", name, etag, nanos, isDel)
-	// Here, we're not using Store because we don't want to add the global prefix.
+	// Here, we're not using Store because markerName already has the global prefix.
 	_, err := b.doStore(ctx, b.markerName, []byte(s))
 	if err != nil {
 		return err
