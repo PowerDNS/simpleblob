@@ -37,6 +37,11 @@ const (
 	// DefaultUpdateMarkerForceListInterval is the default value for
 	// UpdateMarkerForceListInterval.
 	DefaultUpdateMarkerForceListInterval = 5 * time.Minute
+	// DefaultSecretsRefreshInterval is the default value for RefreshSecrets.
+	// It should not be too high so as to retrieve secrets regularly.
+	DefaultSecretsRefreshInterval = 15 * time.Second
+	// DefaultDisableContentMd5 : disable sending the Content-MD5 header
+	DefaultDisableContentMd5 = false
 )
 
 // Options describes the storage options for the S3 backend
@@ -44,6 +49,22 @@ type Options struct {
 	// AccessKey and SecretKey are statically defined here.
 	AccessKey string `yaml:"access_key"`
 	SecretKey string `yaml:"secret_key"`
+
+	// Path to the file containing the access key
+	// as an alternative to AccessKey and SecretKey,
+	// e.g. /etc/s3-secrets/access-key.
+	AccessKeyFile string `yaml:"access_key_file"`
+
+	// Path to the file containing the secret key
+	// as an alternative to AccessKey and SecretKey,
+	// e.g. /etc/s3-secrets/secret-key.
+	SecretKeyFile string `yaml:"secret_key_file"`
+
+	// Time between each secrets retrieval.
+	// Minimum is 1s, lower values are considered an error.
+	// It defaults to DefaultSecretsRefreshInterval,
+	// which is currently 15s.
+	SecretsRefreshInterval time.Duration `yaml:"secrets_refresh_interval"`
 
 	// Region defaults to "us-east-1", which also works for Minio
 	Region string `yaml:"region"`
@@ -62,6 +83,9 @@ type Options struct {
 	// EndpointURL can be set to something like "http://localhost:9000" when using Minio
 	// or "https://s3.amazonaws.com" for AWS S3.
 	EndpointURL string `yaml:"endpoint_url"`
+
+	// DisableContentMd5 defines whether to disable sending the Content-MD5 header
+	DisableContentMd5 bool `yaml:"disable_send_content_md5"`
 
 	// TLS allows customising the TLS configuration
 	// See https://github.com/PowerDNS/go-tlsconfig for the available options
@@ -93,11 +117,13 @@ type Options struct {
 }
 
 func (o Options) Check() error {
-	if o.AccessKey == "" {
-		return fmt.Errorf("s3 storage.options: access_key is required")
+	hasSecretsCreds := o.AccessKeyFile != "" && o.SecretKeyFile != ""
+	hasStaticCreds := o.AccessKey != "" && o.SecretKey != ""
+	if !hasSecretsCreds && !hasStaticCreds {
+		return fmt.Errorf("s3 storage.options: credentials are required, fill either (access_key and secret_key) or (access_key_filename and secret_key_filename)")
 	}
-	if o.SecretKey == "" {
-		return fmt.Errorf("s3 storage.options: secret_key is required")
+	if hasSecretsCreds && o.SecretsRefreshInterval < time.Second {
+		return fmt.Errorf("s3 storage.options: field secrets_refresh_interval must be at least 1s")
 	}
 	if o.Bucket == "" {
 		return fmt.Errorf("s3 storage.options: bucket is required")
@@ -106,10 +132,11 @@ func (o Options) Check() error {
 }
 
 type Backend struct {
-	opt    Options
-	config *minio.Options
-	client *minio.Client
-	log    logr.Logger
+	opt        Options
+	config     *minio.Options
+	client     *minio.Client
+	log        logr.Logger
+	markerName string
 
 	mu         sync.Mutex
 	lastMarker string
@@ -117,12 +144,12 @@ type Backend struct {
 	lastTime   time.Time
 }
 
-func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList, error) {
-	// Prepend global prefix
-	prefix = b.prependGlobalPrefix(prefix)
+func (b *Backend) List(ctx context.Context, prefix string) (blobList simpleblob.BlobList, err error) {
+	// Handle global prefix
+	combinedPrefix := b.prependGlobalPrefix(prefix)
 
 	if !b.opt.UseUpdateMarker {
-		return b.doList(ctx, prefix)
+		return b.doList(ctx, combinedPrefix)
 	}
 
 	m, err := b.Load(ctx, UpdateMarkerFilename)
@@ -144,7 +171,7 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 		return blobs.WithPrefix(prefix), nil
 	}
 
-	blobs, err = b.doList(ctx, "") // We want to cache all, so no prefix
+	blobs, err = b.doList(ctx, b.opt.GlobalPrefix) // We want to cache all, so no prefix
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +189,9 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 	var blobs simpleblob.BlobList
 
 	// Runes to strip from blob names for GlobalPrefix
-	gpEndRune := len(b.opt.GlobalPrefix)
+	// This is fine, because we can trust the API to only return with the prefix.
+	// TODO: trust but verify
+	gpEndIndex := len(b.opt.GlobalPrefix)
 
 	objCh := b.client.ListObjects(ctx, b.opt.Bucket, minio.ListObjectsOptions{
 		Prefix:    prefix,
@@ -170,21 +199,21 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 	})
 	for obj := range objCh {
 		// Handle error returned by MinIO client
-		if err := convertMinioError(obj.Err); err != nil {
+		if err := convertMinioError(obj.Err, true); err != nil {
 			metricCallErrors.WithLabelValues("list").Inc()
 			return nil, err
 		}
 
 		metricCalls.WithLabelValues("list").Inc()
 		metricLastCallTimestamp.WithLabelValues("list").SetToCurrentTime()
-		if obj.Key == UpdateMarkerFilename {
+		if obj.Key == b.markerName {
 			continue
 		}
 
 		// Strip global prefix from blob
 		blobName := obj.Key
-		if gpEndRune > 0 {
-			blobName = blobName[gpEndRune:]
+		if gpEndIndex > 0 {
+			blobName = blobName[gpEndIndex:]
 		}
 
 		blobs = append(blobs, simpleblob.Blob{Name: blobName, Size: obj.Size})
@@ -211,7 +240,7 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 	defer r.Close()
 
 	p, err := io.ReadAll(r)
-	if err = convertMinioError(err); err != nil {
+	if err = convertMinioError(err, false); err != nil {
 		metricCallErrors.WithLabelValues("load").Inc()
 		return nil, err
 	}
@@ -222,14 +251,14 @@ func (b *Backend) doLoadReader(ctx context.Context, name string) (io.ReadCloser,
 	name = b.prependGlobalPrefix(name)
 
 	obj, err := b.client.GetObject(ctx, b.opt.Bucket, name, minio.GetObjectOptions{})
-	if err = convertMinioError(err); err != nil {
+	if err = convertMinioError(err, false); err != nil {
 		return nil, err
 	}
 	if obj == nil {
 		return nil, os.ErrNotExist
 	}
 	info, err := obj.Stat()
-	if err = convertMinioError(err); err != nil {
+	if err = convertMinioError(err, false); err != nil {
 		return nil, err
 	}
 	if info.Key == "" {
@@ -263,11 +292,16 @@ func (b *Backend) doStore(ctx context.Context, name string, data []byte) (minio.
 func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader, size int64) (minio.UploadInfo, error) {
 	name = b.prependGlobalPrefix(name)
 
-	// minio accepts size == -1, meaning the size is unknown.
-	info, err := b.client.PutObject(ctx, b.opt.Bucket, name, r, size, minio.PutObjectOptions{
+	putObjectOptions := minio.PutObjectOptions{
 		NumThreads: 3,
-	})
-	err = convertMinioError(err)
+	}
+	if !b.opt.DisableContentMd5 {
+		putObjectOptions.SendContentMd5 = true
+	}
+
+	// minio accepts size == -1, meaning the size is unknown.
+	info, err := b.client.PutObject(ctx, b.opt.Bucket, name, r, size, putObjectOptions)
+	err = convertMinioError(err, false)
 	return info, err
 }
 
@@ -288,7 +322,7 @@ func (b *Backend) doDelete(ctx context.Context, name string) error {
 	metricLastCallTimestamp.WithLabelValues("delete").SetToCurrentTime()
 
 	err := b.client.RemoveObject(ctx, b.opt.Bucket, name, minio.RemoveObjectOptions{})
-	if err = convertMinioError(err); err != nil {
+	if err = convertMinioError(err, false); err != nil {
 		metricCallErrors.WithLabelValues("delete").Inc()
 	}
 	return err
@@ -309,6 +343,9 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	}
 	if opt.EndpointURL == "" {
 		opt.EndpointURL = DefaultEndpointURL
+	}
+	if opt.SecretsRefreshInterval == 0 {
+		opt.SecretsRefreshInterval = DefaultSecretsRefreshInterval
 	}
 	if err := opt.Check(); err != nil {
 		return nil, err
@@ -363,8 +400,17 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 		return nil, fmt.Errorf("unsupported scheme for S3: %q, use http or https", u.Scheme)
 	}
 
+	creds := credentials.NewStaticV4(opt.AccessKey, opt.SecretKey, "")
+	if opt.AccessKeyFile != "" {
+		creds = credentials.New(&FileSecretsCredentials{
+			AccessKeyFile:   opt.AccessKeyFile,
+			SecretKeyFile:   opt.SecretKeyFile,
+			RefreshInterval: opt.SecretsRefreshInterval,
+		})
+	}
+
 	cfg := &minio.Options{
-		Creds:     credentials.NewStaticV4(opt.AccessKey, opt.SecretKey, ""),
+		Creds:     creds,
 		Secure:    useSSL,
 		Transport: hc.Transport,
 		Region:    opt.Region,
@@ -391,7 +437,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 
 		err := client.MakeBucket(ctx, opt.Bucket, minio.MakeBucketOptions{Region: opt.Region})
 		if err != nil {
-			if err := convertMinioError(err); err != nil {
+			if err := convertMinioError(err, false); err != nil {
 				return nil, err
 			}
 		}
@@ -403,6 +449,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 		client: client,
 		log:    log,
 	}
+	b.setGlobalPrefix(opt.GlobalPrefix)
 
 	return b, nil
 }
@@ -472,22 +519,29 @@ func (w *writerWrapper) Close() error {
 	return w.backend.setMarker(w.ctx, w.name, w.info.ETag, false)
 }
 
+// setGlobalPrefix updates the global prefix in b and the cached marker name,
+// so it can be dynamically changed in tests.
+func (b *Backend) setGlobalPrefix(prefix string) {
+	b.opt.GlobalPrefix = prefix
+	b.markerName = b.prependGlobalPrefix(UpdateMarkerFilename)
+}
+
 // convertMinioError takes an error, possibly a minio.ErrorResponse
 // and turns it into a well known error when possible.
 // If error is not well known, it is returned as is.
 // If error is considered to be ignorable, nil is returned.
-func convertMinioError(err error) error {
+func convertMinioError(err error, isList bool) error {
 	if err == nil {
 		return nil
 	}
-	errResp := minio.ToErrorResponse(err)
-	if errResp.StatusCode == 404 {
-		return os.ErrNotExist
+	errRes := minio.ToErrorResponse(err)
+	if !isList && errRes.StatusCode == 404 {
+		return fmt.Errorf("%w: %s", os.ErrNotExist, err.Error())
 	}
-	if errResp.Code != "BucketAlreadyOwnedByYou" {
-		return err
+	if errRes.Code == "BucketAlreadyOwnedByYou" {
+		return nil
 	}
-	return nil
+	return err
 }
 
 // prependGlobalPrefix prepends the GlobalPrefix to the name/prefix

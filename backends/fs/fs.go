@@ -77,7 +77,10 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 	}
 	fullPath := filepath.Join(b.rootPath, name)
 	tmpPath := fullPath + ignoreSuffix // ignored by List()
-	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+	if err := writeFile(tmpPath, data); err != nil {
+		return err
+	}
+	if err := syncDir(b.rootPath); err != nil {
 		return err
 	}
 	return os.Rename(tmpPath, fullPath)
@@ -145,4 +148,39 @@ func init() {
 		}
 		return New(opt)
 	})
+}
+
+func writeFile(name string, data []byte) error {
+	f, err := os.Create(name)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err = f.Write(data); err != nil {
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func syncDir(name string) error {
+	dir, err := os.Open(name)
+	if err != nil {
+		return err
+	}
+	info, err := dir.Stat()
+	if err != nil {
+		_ = dir.Close()
+		return err
+	}
+	if !info.IsDir() {
+		_ = dir.Close()
+		return fmt.Errorf("%s: not a dir", name)
+	}
+	if err := dir.Sync(); err != nil {
+		return err
+	}
+	return dir.Close()
 }

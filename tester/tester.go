@@ -8,6 +8,7 @@ import (
 
 	"github.com/PowerDNS/simpleblob"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // DoBackendTests tests a backend for conformance
@@ -42,6 +43,7 @@ func DoBackendTests(t *testing.T, b simpleblob.Interface) {
 	ls, err = b.List(ctx, "foo-")
 	assert.NoError(t, err)
 	assert.Equal(t, ls.Names(), []string{"foo-1"})
+	require.NotEmpty(t, ls)
 	assert.Equal(t, ls[0].Size, int64(3))
 	ls, err = b.List(ctx, "bar-")
 	assert.NoError(t, err)
