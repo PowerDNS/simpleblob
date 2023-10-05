@@ -3,6 +3,7 @@ package fs
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -10,6 +11,10 @@ import (
 
 	"github.com/PowerDNS/simpleblob"
 )
+
+// ignoreSuffix is the suffix to use internally
+// to hide a file from (*Backend).List.
+const ignoreSuffix = ".tmp"
 
 // Options describes the storage options for the fs backend
 type Options struct {
@@ -71,7 +76,7 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 		return os.ErrPermission
 	}
 	fullPath := filepath.Join(b.rootPath, name)
-	tmpPath := fullPath + ".tmp" // ignored by List()
+	tmpPath := fullPath + ignoreSuffix // ignored by List()
 	if err := writeFile(tmpPath, data); err != nil {
 		return err
 	}
@@ -92,6 +97,24 @@ func (b *Backend) Delete(ctx context.Context, name string) error {
 	return err
 }
 
+// NewReader provides an optimized way to read from named file.
+func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, error) {
+	if !allowedName(name) {
+		return nil, os.ErrPermission
+	}
+	fullPath := filepath.Join(b.rootPath, name)
+	return os.Open(fullPath)
+}
+
+// NewWriter provides an optimized way to write to a file.
+func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, error) {
+	if !allowedName(name) {
+		return nil, os.ErrPermission
+	}
+	fullPath := filepath.Join(b.rootPath, name)
+	return createAtomic(fullPath)
+}
+
 func allowedName(name string) bool {
 	// TODO: Make shared and test for rejection
 	if strings.Contains(name, "/") {
@@ -100,7 +123,7 @@ func allowedName(name string) bool {
 	if strings.HasPrefix(name, ".") {
 		return false
 	}
-	if strings.HasSuffix(name, ".tmp") {
+	if strings.HasSuffix(name, ignoreSuffix) {
 		return false // used for our temp files when writing
 	}
 	return true
