@@ -294,10 +294,7 @@ func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader, s
 	metricLastCallTimestamp.WithLabelValues("store").SetToCurrentTime()
 
 	putObjectOptions := minio.PutObjectOptions{
-		NumThreads: 3,
-	}
-	if !b.opt.DisableContentMd5 {
-		putObjectOptions.SendContentMd5 = true
+		SendContentMd5: !b.opt.DisableContentMd5,
 	}
 
 	// minio accepts size == -1, meaning the size is unknown.
