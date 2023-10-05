@@ -87,6 +87,10 @@ type Options struct {
 	// DisableContentMd5 defines whether to disable sending the Content-MD5 header
 	DisableContentMd5 bool `yaml:"disable_send_content_md5"`
 
+	// NumMinioThreads defines the number of threads that Minio uses for its workers.
+	// It defaults to the using the default value defined by the Minio client.
+	NumMinioThreads uint `yaml:"num_minio_threads"`
+
 	// TLS allows customising the TLS configuration
 	// See https://github.com/PowerDNS/go-tlsconfig for the available options
 	TLS tlsconfig.Config `yaml:"tls"`
@@ -296,6 +300,7 @@ func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader, s
 	metricLastCallTimestamp.WithLabelValues("store").SetToCurrentTime()
 
 	putObjectOptions := minio.PutObjectOptions{
+		NumThreads:     b.opt.NumMinioThreads,
 		SendContentMd5: !b.opt.DisableContentMd5,
 	}
 
