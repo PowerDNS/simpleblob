@@ -127,7 +127,7 @@ func TestBackend_globalPrefixAndMarker(t *testing.T) {
 }
 
 func TestBackend_recursive(t *testing.T) {
-    	// NB: Those tests are for PrefixFolders, a deprecated options.
+	// NB: Those tests are for PrefixFolders, a deprecated option.
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -166,11 +166,42 @@ func TestBackend_recursive(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, ls.Names(), []string{"bar-1", "bar-2", "foo/bar-3"})
 
-	// List all - HideFolders enabled
-	b.opt.HideFolders = true
-	ls, err = b.List(ctx, "")
-	assert.NoError(t, err)
-	assert.Equal(t, []string{"bar-1", "bar-2"}, ls.Names())
-
 	assert.Len(t, b.lastMarker, 0)
+}
+
+func TestHideFolders(t *testing.T) {
+	// NB: working with folders with S3 is flaky, because a `foo` key
+	// will shadow all `foo/*` keys while listing,
+	// even though those `foo/*` keys exist and they hold the values they're expected to.
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	b := getBackend(ctx, t)
+	b.opt.HideFolders = true
+
+	p := []byte("123")
+	err := b.Store(ctx, "foo", p)
+	assert.NoError(t, err)
+	err = b.Store(ctx, "bar/baz", p)
+	assert.NoError(t, err)
+
+	t.Run("at root", func(t *testing.T) {
+		ls, err := b.List(ctx, "")
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"foo"}, ls.Names())
+	})
+
+	t.Run("with List prefix", func(t *testing.T) {
+		ls, err := b.List(ctx, "bar/")
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"bar/baz"}, ls.Names())
+	})
+
+	t.Run("with global prefix", func(t *testing.T) {
+		b.setGlobalPrefix("bar/")
+		ls, err := b.List(ctx, "")
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"baz"}, ls.Names())
+	})
 }
