@@ -458,7 +458,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	return b, nil
 }
 
-// NewReader satisfies ReaderStorage and provides a read streaming interface to
+// NewReader satisfies StreamReader and provides a read streaming interface to
 // a blob located on an S3 server.
 func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, error) {
 	r, err := b.doLoadReader(ctx, name)
@@ -468,7 +468,7 @@ func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, er
 	return r, nil
 }
 
-// NewReader satisfies ReaderStorage and provides a write streaming interface to
+// NewWriter satisfies StreamWriter and provides a write streaming interface to
 // a blob located on an S3 server.
 func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, error) {
 	pr, pw := io.Pipe()
