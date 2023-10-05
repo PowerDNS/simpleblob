@@ -152,6 +152,8 @@ func (b *Backend) List(ctx context.Context, prefix string) (blobList simpleblob.
 		return b.doList(ctx, combinedPrefix)
 	}
 
+	// Using Load, that will itself prepend the global prefix to the marker name.
+	// So we're using the raw marker name here.
 	m, err := b.Load(ctx, UpdateMarkerFilename)
 	exists := !errors.Is(err, os.ErrNotExist)
 	if err != nil && exists {
@@ -458,6 +460,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 // NewReader satisfies StreamReader and provides a read streaming interface to
 // a blob located on an S3 server.
 func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, error) {
+	name = b.prependGlobalPrefix(name)
 	r, err := b.doLoadReader(ctx, name)
 	if err != nil {
 		return nil, err
@@ -468,6 +471,7 @@ func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, er
 // NewWriter satisfies StreamWriter and provides a write streaming interface to
 // a blob located on an S3 server.
 func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, error) {
+	name = b.prependGlobalPrefix(name)
 	pr, pw := io.Pipe()
 	wrap := &writerWrapper{
 		ctx:     ctx,
