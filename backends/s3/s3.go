@@ -229,29 +229,28 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 // Load retrieves the content of the object identified by name from S3 Bucket
 // configured in b.
 func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
-	metricCalls.WithLabelValues("load").Inc()
-	metricLastCallTimestamp.WithLabelValues("load").SetToCurrentTime()
+	name = b.prependGlobalPrefix(name)
 
 	r, err := b.doLoadReader(ctx, name)
 	if err != nil {
-		metricCallErrors.WithLabelValues("load").Inc()
 		return nil, err
 	}
 	defer r.Close()
 
 	p, err := io.ReadAll(r)
 	if err = convertMinioError(err, false); err != nil {
-		metricCallErrors.WithLabelValues("load").Inc()
 		return nil, err
 	}
 	return p, nil
 }
 
 func (b *Backend) doLoadReader(ctx context.Context, name string) (io.ReadCloser, error) {
-	name = b.prependGlobalPrefix(name)
+	metricCalls.WithLabelValues("load").Inc()
+	metricLastCallTimestamp.WithLabelValues("load").SetToCurrentTime()
 
 	obj, err := b.client.GetObject(ctx, b.opt.Bucket, name, minio.GetObjectOptions{})
 	if err = convertMinioError(err, false); err != nil {
+		metricCallErrors.WithLabelValues("load").Inc()
 		return nil, err
 	}
 	if obj == nil {
@@ -259,6 +258,7 @@ func (b *Backend) doLoadReader(ctx context.Context, name string) (io.ReadCloser,
 	}
 	info, err := obj.Stat()
 	if err = convertMinioError(err, false); err != nil {
+		metricCallErrors.WithLabelValues("load").Inc()
 		return nil, err
 	}
 	if info.Key == "" {
@@ -272,17 +272,17 @@ func (b *Backend) doLoadReader(ctx context.Context, name string) (io.ReadCloser,
 // Store sets the content of the object identified by name to the content
 // of data, in the S3 Bucket configured in b.
 func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
-	metricCalls.WithLabelValues("store").Inc()
-	metricLastCallTimestamp.WithLabelValues("store").SetToCurrentTime()
+	// Prepend global prefix
+	name = b.prependGlobalPrefix(name)
 
 	info, err := b.doStore(ctx, name, data)
 	if err != nil {
-		metricCallErrors.WithLabelValues("store").Inc()
 		return err
 	}
 	return b.setMarker(ctx, name, info.ETag, false)
 }
 
+// doStore is a convenience wrapper around doStoreReader.
 func (b *Backend) doStore(ctx context.Context, name string, data []byte) (minio.UploadInfo, error) {
 	return b.doStoreReader(ctx, name, bytes.NewReader(data), int64(len(data)))
 }
@@ -290,7 +290,8 @@ func (b *Backend) doStore(ctx context.Context, name string, data []byte) (minio.
 // doStoreReader stores data with key name in S3, using r as a source for data.
 // The value of size may be -1, in case the size is not known.
 func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader, size int64) (minio.UploadInfo, error) {
-	name = b.prependGlobalPrefix(name)
+	metricCalls.WithLabelValues("store").Inc()
+	metricLastCallTimestamp.WithLabelValues("store").SetToCurrentTime()
 
 	putObjectOptions := minio.PutObjectOptions{
 		NumThreads: 3,
@@ -302,6 +303,9 @@ func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader, s
 	// minio accepts size == -1, meaning the size is unknown.
 	info, err := b.client.PutObject(ctx, b.opt.Bucket, name, r, size, putObjectOptions)
 	err = convertMinioError(err, false)
+	if err != nil {
+		metricCallErrors.WithLabelValues("store").Inc()
+	}
 	return info, err
 }
 
