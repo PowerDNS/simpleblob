@@ -45,3 +45,12 @@ func (bl BlobList) WithPrefix(prefix string) (blobs BlobList) {
 	}
 	return blobs
 }
+
+// Size returns the total size of all blobs in the BlobList
+func (bl BlobList) Size() int64 {
+	var size int64
+	for _, b := range bl {
+		size += b.Size
+	}
+	return size
+}
