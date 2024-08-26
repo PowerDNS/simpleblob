@@ -3,7 +3,6 @@ package fs
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -95,24 +94,6 @@ func (b *Backend) Delete(ctx context.Context, name string) error {
 		return nil
 	}
 	return err
-}
-
-// NewReader provides an optimized way to read from named file.
-func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, error) {
-	if !allowedName(name) {
-		return nil, os.ErrPermission
-	}
-	fullPath := filepath.Join(b.rootPath, name)
-	return os.Open(fullPath)
-}
-
-// NewWriter provides an optimized way to write to a file.
-func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, error) {
-	if !allowedName(name) {
-		return nil, os.ErrPermission
-	}
-	fullPath := filepath.Join(b.rootPath, name)
-	return createAtomic(fullPath)
 }
 
 func allowedName(name string) bool {
