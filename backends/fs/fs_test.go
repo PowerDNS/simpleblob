@@ -10,10 +10,8 @@ import (
 	"github.com/PowerDNS/simpleblob/tester"
 )
 
-func TestBackend(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "simpleblob-test-")
-	assert.NoError(t, err)
-	t.Cleanup(func() {
+func cleanup(t *testing.T, tmpDir string) func() {
+	return func() {
 		// Don't want to use the recursive os.RemoveAll() for safety
 		if tmpDir == "" {
 			return
@@ -28,7 +26,13 @@ func TestBackend(t *testing.T) {
 		}
 		err = os.Remove(tmpDir)
 		assert.NoError(t, err)
-	})
+	}
+}
+
+func TestBackend(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "simpleblob-test-")
+	assert.NoError(t, err)
+	t.Cleanup(cleanup(t, tmpDir))
 
 	b, err := New(Options{RootPath: tmpDir})
 	assert.NoError(t, err)
