@@ -22,6 +22,9 @@ type Backend struct {
 
 func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList, error) {
 	var blobs simpleblob.BlobList
+	if err := ctx.Err(); err != nil {
+		return blobs, err
+	}
 
 	entries, err := os.ReadDir(b.rootPath)
 	if err != nil {
@@ -59,6 +62,9 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 }
 
 func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if !allowedName(name) {
 		return nil, os.ErrNotExist
 	}
@@ -67,6 +73,9 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 }
 
 func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if !allowedName(name) {
 		return os.ErrPermission
 	}
@@ -82,6 +91,9 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 }
 
 func (b *Backend) Delete(ctx context.Context, name string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if !allowedName(name) {
 		return os.ErrPermission
 	}
@@ -119,6 +131,9 @@ func New(opt Options) (*Backend, error) {
 
 func init() {
 	simpleblob.RegisterBackend("fs", func(ctx context.Context, p simpleblob.InitParams) (simpleblob.Interface, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		var opt Options
 		if err := p.OptionsThroughYAML(&opt); err != nil {
 			return nil, err
