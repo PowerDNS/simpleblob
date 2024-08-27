@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 
+	"github.com/PowerDNS/simpleblob"
 	"github.com/minio/minio-go/v7"
 )
 
@@ -22,13 +23,25 @@ func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, er
 // a blob located on an S3 server.
 func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, error) {
 	name = b.prependGlobalPrefix(name)
-	wrap := &writerWrapper{
+	pr, pw := io.Pipe()
+	w := &writerWrapper{
 		ctx:      ctx,
 		backend:  b,
 		name:     name,
+		pw:       pw,
 		donePipe: make(chan struct{}),
 	}
-	return wrap, nil
+	go func() {
+		var err error
+		// The following call will return only on error or
+		// if the writing end of the pipe is closed.
+		// It is okay to write to w.info from this goroutine
+		// because it will only be used after w.donePipe is closed.
+		w.info, err = w.backend.doStoreReader(w.ctx, w.name, pr, -1)
+		_ = pr.CloseWithError(err) // Always returns nil.
+		close(w.donePipe)
+	}()
+	return w, nil
 }
 
 // A writerWrapper implements io.WriteCloser and is returned by (*Backend).NewWriter.
@@ -48,32 +61,18 @@ type writerWrapper struct {
 }
 
 func (w *writerWrapper) Write(p []byte) (int, error) {
-	if w.pw == nil {
-		pr, pw := io.Pipe()
-		w.pw = pw
-		go func() {
-			var err error
-			w.info, err = w.backend.doStoreReader(w.ctx, w.name, pr, -1)
-			_ = pr.CloseWithError(err)
-			close(w.donePipe)
-		}()
-	}
+	// Not checking the status of ctx explicitely because it will be propagated
+	// from the reader goroutine.
 	return w.pw.Write(p)
 }
 
-func (w *writerWrapper) Close() (err error) {
-	if w.pw != nil {
-		err = w.pw.Close()
-		if err != nil {
-			return err
-		}
-		select {
-		case <-w.donePipe:
-		case <-w.ctx.Done():
-			err = w.ctx.Err()
-			_ = w.pw.CloseWithError(err)
-			return err
-		}
+func (w *writerWrapper) Close() error {
+	select {
+	case <-w.donePipe:
+		return simpleblob.ErrClosed
+	default:
 	}
+	_ = w.pw.Close() // Always returns nil.
+	<-w.donePipe     // Wait for doStoreReader to return and w.info to be set.
 	return w.backend.setMarker(w.ctx, w.name, w.info.ETag, false)
 }
