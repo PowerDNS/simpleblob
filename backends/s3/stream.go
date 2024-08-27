@@ -22,6 +22,9 @@ func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, er
 // NewWriter satisfies StreamWriter and provides a write streaming interface to
 // a blob located on an S3 server.
 func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	name = b.prependGlobalPrefix(name)
 	pr, pw := io.Pipe()
 	w := &writerWrapper{

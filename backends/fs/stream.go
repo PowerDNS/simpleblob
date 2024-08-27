@@ -9,6 +9,9 @@ import (
 
 // NewReader provides an optimized way to read from named file.
 func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if !allowedName(name) {
 		return nil, os.ErrPermission
 	}
@@ -18,6 +21,9 @@ func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, er
 
 // NewWriter provides an optimized way to write to a file.
 func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if !allowedName(name) {
 		return nil, os.ErrPermission
 	}
