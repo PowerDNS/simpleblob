@@ -77,9 +77,3 @@ func (w *writerWrapper) Close() (err error) {
 	}
 	return w.backend.setMarker(w.ctx, w.name, w.info.ETag, false)
 }
-
-// ReadFrom implements io.ReaderFrom.
-func (w *writerWrapper) ReadFrom(r io.Reader) (n int64, err error) {
-	info, err := w.backend.doStoreReader(w.ctx, w.name, r, -1)
-	return info.Size, err
-}
