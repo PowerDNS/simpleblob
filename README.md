@@ -44,10 +44,8 @@ The interface currently does not support streaming of large blobs. In the future
 
 ## API Stability
 
-We support the last two stable Go versions, currently 1.17 and 1.18.
+We support the last two stable Go versions, currently 1.22 and 1.23.
 
 From a API consumer point of view, we do not plan any backward incompatible changes before a v1.0.
 
 For storage backends, any future extensions most likely be added with optional interface, similar to the `fs.FS` design. Utility functions that return a compatible implementation will be used for backends that do not implement the interface, when possible.
-
-
