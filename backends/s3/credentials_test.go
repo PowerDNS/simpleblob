@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/PowerDNS/simpleblob/backends/s3"
-	"github.com/PowerDNS/simpleblob/backends/s3/s3testing"
 	"github.com/PowerDNS/simpleblob/tester"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	testcontainersminio "github.com/testcontainers/testcontainers-go/modules/minio"
 )
 
 func TestFileSecretsCredentials(t *testing.T) {
@@ -30,15 +30,20 @@ func TestFileSecretsCredentials(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	// Create server
-	addr, stop, err := s3testing.ServeMinio(ctx, tempDir)
-	if errors.Is(err, s3testing.ErrMinioNotFound) {
-		t.Skip("minio binary not found locally, make sure it is in PATH")
-	}
+	container, err := testcontainersminio.Run(ctx, "quay.io/minio/minio")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = stop() }()
+	defer func() {
+		if err := container.Terminate(ctx); err != nil {
+			t.Log(err)
+		}
+	}()
+
+	addr, err := container.ConnectionString(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Create minio client, using our provider.
 	creds := credentials.New(provider)
@@ -65,7 +70,7 @@ func TestFileSecretsCredentials(t *testing.T) {
 	// First credential files creation.
 	// Keep them empty for now,
 	// so that calls to the server will fail.
-	writeSecrets(t, tempDir, "")
+	writeSecrets(t, tempDir, "", "")
 
 	// The files do not hold the right values,
 	// so a call to the server should fail.
@@ -74,12 +79,12 @@ func TestFileSecretsCredentials(t *testing.T) {
 	// Write the right keys to the files.
 	// We're not testing expiry here,
 	// and forcing credentials cache to update.
-	writeSecrets(t, tempDir, s3testing.AdminUserOrPassword)
+	writeSecrets(t, tempDir, container.Username, container.Password)
 	creds.Expire()
 	assertClientSuccess(true, "after changing files content")
 
 	// Change content of the files.
-	writeSecrets(t, tempDir, "badcredentials")
+	writeSecrets(t, tempDir, "bad-user", "bad-password")
 	creds.Expire()
 	assertClientSuccess(false, "after changing again, to bad credentials")
 }
@@ -91,14 +96,20 @@ func TestBackendWithSecrets(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	addr, stop, err := s3testing.ServeMinio(ctx, tempDir)
-	if errors.Is(err, s3testing.ErrMinioNotFound) {
-		t.Skip("minio binary not found locally, make sure it is in PATH")
-	}
+	container, err := testcontainersminio.Run(ctx, "quay.io/minio/minio")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = stop() }()
+	defer func() {
+		if err := container.Terminate(ctx); err != nil {
+			t.Log(err)
+		}
+	}()
+
+	addr, err := container.ConnectionString(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Prepare backend options to reuse.
 	// These will not change.
@@ -119,7 +130,7 @@ func TestBackendWithSecrets(t *testing.T) {
 	}
 
 	// Now write files, but with bad content.
-	writeSecrets(t, tempDir, "")
+	writeSecrets(t, tempDir, "", "")
 	_, err = s3.New(ctx, opt)
 	if err == nil || err.Error() != "Access Denied." {
 		t.Fatal("backend should not start with bad credentials")
@@ -127,7 +138,7 @@ func TestBackendWithSecrets(t *testing.T) {
 
 	// Write the good content.
 	// Now the backend should start and be able to perform a request.
-	writeSecrets(t, tempDir, s3testing.AdminUserOrPassword)
+	writeSecrets(t, tempDir, container.Username, container.Password)
 
 	backend, err := s3.New(ctx, opt)
 	if err != nil {
@@ -153,14 +164,13 @@ func secretsPaths(dir string) (access, secret string) {
 
 // writeSecrets writes content to files called "access-key" and "secret-key"
 // in dir.
-// It returns
-func writeSecrets(t testing.TB, dir, content string) {
+func writeSecrets(t testing.TB, dir, adminUser, password string) {
 	access, secret := secretsPaths(dir)
-	err := os.WriteFile(access, []byte(content), 0666)
+	err := os.WriteFile(access, []byte(adminUser), 0666)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = os.WriteFile(secret, []byte(content), 0666)
+	err = os.WriteFile(secret, []byte(password), 0666)
 	if err != nil {
 		t.Fatal(err)
 	}
