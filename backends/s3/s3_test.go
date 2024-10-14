@@ -8,12 +8,14 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
 	testcontainersminio "github.com/testcontainers/testcontainers-go/modules/minio"
 
 	"github.com/PowerDNS/simpleblob/tester"
 )
 
 func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
+	testcontainers.SkipIfProviderIsNotHealthy(t)
 	container, err := testcontainersminio.Run(ctx, "quay.io/minio/minio")
 	if err != nil {
 		t.Fatal(err)

@@ -12,10 +12,12 @@ import (
 	"github.com/PowerDNS/simpleblob/tester"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/testcontainers/testcontainers-go"
 	testcontainersminio "github.com/testcontainers/testcontainers-go/modules/minio"
 )
 
 func TestFileSecretsCredentials(t *testing.T) {
+	testcontainers.SkipIfProviderIsNotHealthy(t)
 	tempDir := t.TempDir()
 
 	access, secret := secretsPaths(tempDir)
@@ -90,6 +92,7 @@ func TestFileSecretsCredentials(t *testing.T) {
 }
 
 func TestBackendWithSecrets(t *testing.T) {
+	testcontainers.SkipIfProviderIsNotHealthy(t)
 	tempDir := t.TempDir()
 
 	ctx := context.Background()
