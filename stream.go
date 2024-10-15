@@ -11,7 +11,7 @@ import (
 type StreamReader interface {
 	Interface
 	// NewReader returns an io.ReadCloser, allowing stream reading
-	// of named value from the underlying backend.
+	// of named blob from the underlying backend.
 	NewReader(ctx context.Context, name string) (io.ReadCloser, error)
 }
 
@@ -19,12 +19,12 @@ type StreamReader interface {
 type StreamWriter interface {
 	Interface
 	// NewWriter returns an io.WriteCloser, allowing stream writing
-	// to named key in the underlying backend.
+	// to named blob in the underlying backend.
 	NewWriter(ctx context.Context, name string) (io.WriteCloser, error)
 }
 
-// NewReader returns an optimized io.ReadCloser for backend if available,
-// else a basic buffered implementation.
+// NewReader allows reading a named blob from st.
+// It returns an optimized io.ReadCloser if available, else a basic buffered implementation.
 func NewReader(ctx context.Context, st Interface, name string) (io.ReadCloser, error) {
 	if sst, ok := st.(StreamReader); ok {
 		return sst.NewReader(ctx, name)
@@ -69,8 +69,8 @@ func (w *fallbackWriter) Close() error {
 	return w.st.Store(w.ctx, w.name, w.buf.Bytes())
 }
 
-// NewWriter returns an optimized io.WriteCloser for backend if available,
-// else a basic buffered implementation.
+// NewWriter allows writing a named blob to st.
+// It returns an optimized io.WriteCloser if available, else a basic buffered implementation.
 func NewWriter(ctx context.Context, st Interface, name string) (io.WriteCloser, error) {
 	if sst, ok := st.(StreamWriter); ok {
 		return sst.NewWriter(ctx, name)
