@@ -2,7 +2,7 @@ module github.com/PowerDNS/simpleblob
 
 go 1.22
 
-toolchain go1.22.8
+toolchain go1.23.2
 
 require (
 	github.com/PowerDNS/go-tlsconfig v0.0.0-20221101135152-0956853b28df
