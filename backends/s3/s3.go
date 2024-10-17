@@ -87,6 +87,10 @@ type Options struct {
 	// DisableContentMd5 defines whether to disable sending the Content-MD5 header
 	DisableContentMd5 bool `yaml:"disable_send_content_md5"`
 
+	// NumMinioThreads defines the number of threads that Minio uses for its workers.
+	// It defaults to the using the default value defined by the Minio client.
+	NumMinioThreads uint `yaml:"num_minio_threads"`
+
 	// TLS allows customising the TLS configuration
 	// See https://github.com/PowerDNS/go-tlsconfig for the available options
 	TLS tlsconfig.Config `yaml:"tls"`
@@ -152,6 +156,8 @@ func (b *Backend) List(ctx context.Context, prefix string) (blobList simpleblob.
 		return b.doList(ctx, combinedPrefix)
 	}
 
+	// Using Load, that will itself prepend the global prefix to the marker name.
+	// So we're using the raw marker name here.
 	m, err := b.Load(ctx, UpdateMarkerFilename)
 	exists := !errors.Is(err, os.ErrNotExist)
 	if err != nil && exists {
@@ -229,25 +235,44 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 // Load retrieves the content of the object identified by name from S3 Bucket
 // configured in b.
 func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
-	// Prepend global prefix
 	name = b.prependGlobalPrefix(name)
 
+	r, err := b.doLoadReader(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+
+	p, err := io.ReadAll(r)
+	if err = convertMinioError(err, false); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+func (b *Backend) doLoadReader(ctx context.Context, name string) (io.ReadCloser, error) {
 	metricCalls.WithLabelValues("load").Inc()
 	metricLastCallTimestamp.WithLabelValues("load").SetToCurrentTime()
 
 	obj, err := b.client.GetObject(ctx, b.opt.Bucket, name, minio.GetObjectOptions{})
 	if err = convertMinioError(err, false); err != nil {
+		metricCallErrors.WithLabelValues("load").Inc()
 		return nil, err
-	} else if obj == nil {
+	}
+	if obj == nil {
 		return nil, os.ErrNotExist
 	}
-	defer obj.Close()
-
-	p, err := io.ReadAll(obj)
+	info, err := obj.Stat()
 	if err = convertMinioError(err, false); err != nil {
+		metricCallErrors.WithLabelValues("load").Inc()
 		return nil, err
 	}
-	return p, nil
+	if info.Key == "" {
+		// minio will return an object with empty fields when name
+		// is not present in bucket.
+		return nil, os.ErrNotExist
+	}
+	return obj, nil
 }
 
 // Store sets the content of the object identified by name to the content
@@ -263,18 +288,25 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 	return b.setMarker(ctx, name, info.ETag, false)
 }
 
+// doStore is a convenience wrapper around doStoreReader.
 func (b *Backend) doStore(ctx context.Context, name string, data []byte) (minio.UploadInfo, error) {
+	return b.doStoreReader(ctx, name, bytes.NewReader(data), int64(len(data)))
+}
+
+// doStoreReader stores data with key name in S3, using r as a source for data.
+// The value of size may be -1, in case the size is not known.
+func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader, size int64) (minio.UploadInfo, error) {
 	metricCalls.WithLabelValues("store").Inc()
 	metricLastCallTimestamp.WithLabelValues("store").SetToCurrentTime()
 
 	putObjectOptions := minio.PutObjectOptions{
-		NumThreads: 3,
-	}
-	if !b.opt.DisableContentMd5 {
-		putObjectOptions.SendContentMd5 = true
+		NumThreads:     b.opt.NumMinioThreads,
+		SendContentMd5: !b.opt.DisableContentMd5,
 	}
 
-	info, err := b.client.PutObject(ctx, b.opt.Bucket, name, bytes.NewReader(data), int64(len(data)), putObjectOptions)
+	// minio accepts size == -1, meaning the size is unknown.
+	info, err := b.client.PutObject(ctx, b.opt.Bucket, name, r, size, putObjectOptions)
+	err = convertMinioError(err, false)
 	if err != nil {
 		metricCallErrors.WithLabelValues("store").Inc()
 	}
@@ -371,9 +403,9 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	case "https":
 		useSSL = true
 	case "":
-		return nil, fmt.Errorf("no scheme provided for endpoint URL '%s', use http or https.", opt.EndpointURL)
+		return nil, fmt.Errorf("no scheme provided for endpoint URL %q, use http or https", opt.EndpointURL)
 	default:
-		return nil, fmt.Errorf("unsupported scheme for S3: '%s', use http or https.", u.Scheme)
+		return nil, fmt.Errorf("unsupported scheme for S3: %q, use http or https", u.Scheme)
 	}
 
 	creds := credentials.NewStaticV4(opt.AccessKey, opt.SecretKey, "")
