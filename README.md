@@ -67,6 +67,6 @@ The interface currently does not support streaming of large blobs. In the future
 
 ## API Stability
 
-We support the last two stable Go versions, currently 1.17 and 1.18.
+We support the last two stable Go versions, currently 1.22 and 1.23.
 
 From a API consumer point of view, we do not plan any backward incompatible changes before a v1.0.
