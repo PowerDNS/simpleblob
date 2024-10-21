@@ -1,4 +1,3 @@
-
 # Simpleblob
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/PowerDNS/simpleblob.svg)](https://pkg.go.dev/github.com/PowerDNS/simpleblob)
@@ -9,6 +8,9 @@ Simpleblob is a Go module that simplifies the storage of arbitrary data by key f
 - `s3`: S3 bucket storage
 - `fs`: File storage (one file per blob)
 - `memory`: Memory storage (for tests)
+
+
+## Usage
 
 The interface implemented by the backends is:
 
@@ -38,16 +40,33 @@ type Storage struct {
 }
 ```
 
+
+### `io` interfaces
+
+Reading from or writing to a blob directly can be done using the `NewReader` and `NewWriter` functions.
+
+```go
+func NewReader(ctx context.Context, storage Interface, blobName string) (io.ReadCloser, error)
+func NewWriter(ctx context.Context, storage Interface, blobName string) (io.WriteCloser, error)
+```
+
+The returned ReadCloser or WriteCloser is an optimized implementation if the backend being used implements the `StreamReader` or `StreamWriter` interfaces.
+If not, a convenience wrapper for the storage is returned.
+
+| Backend | StreamReader | StreamWriter |
+| --- | --- | --- |
+| S3 | ✔ | ✔ |
+| Filesystem | ✔ | ✔ |
+| Memory | ✖ | ✖ |
+
+
 ## Limitations
 
 The interface currently does not support streaming of large blobs. In the future we may provide this by implementing `fs.FS` in the backend for reading, and a similar interface for writing new blobs.
 
+
 ## API Stability
 
-We support the last two stable Go versions, currently 1.17 and 1.18.
+We support the last two stable Go versions, currently 1.22 and 1.23.
 
 From a API consumer point of view, we do not plan any backward incompatible changes before a v1.0.
-
-For storage backends, any future extensions most likely be added with optional interface, similar to the `fs.FS` design. Utility functions that return a compatible implementation will be used for backends that do not implement the interface, when possible.
-
-
