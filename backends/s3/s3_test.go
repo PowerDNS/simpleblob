@@ -2,58 +2,40 @@ package s3
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"github.com/testcontainers/testcontainers-go"
+	testcontainersminio "github.com/testcontainers/testcontainers-go/modules/minio"
 
 	"github.com/PowerDNS/simpleblob/tester"
 )
 
-// TestConfigPathEnv is the path to a YAML file with the Options
-// with an S3 bucket configuration that can be used for testing.
-// The bucket will be emptied before every run!!!
-//
-// To run a Minio for this :
-//
-//	env MINIO_ROOT_USER=test MINIO_ROOT_PASSWORD=secret minio server /tmp/test-data/
-//
-// Example test config:
-//
-//	{
-//	  "access_key": "test",
-//	  "secret_key": "verysecret",
-//	  "region": "us-east-1",
-//	  "bucket": "test-bucket",
-//	  "endpoint_url": "http://127.0.0.1:9000"
-//	}
-const TestConfigPathEnv = "SIMPLEBLOB_TEST_S3_CONFIG"
-
 func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
-	cfgPath := os.Getenv(TestConfigPathEnv)
-	if cfgPath == "" {
-		t.Skipf("S3 tests skipped, set the %s env var to run these", TestConfigPathEnv)
-		return
+	testcontainers.SkipIfProviderIsNotHealthy(t)
+	container, err := testcontainersminio.Run(ctx, "quay.io/minio/minio")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	cfgContents, err := os.ReadFile(cfgPath)
+	url, err := container.ConnectionString(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	b, err = New(ctx, Options{
+		EndpointURL:  "http://" + url,
+		AccessKey:    container.Username,
+		SecretKey:    container.Password,
+		Bucket:       "test-bucket",
+		CreateBucket: true,
+	})
 	require.NoError(t, err)
 
-	var opt Options
-	err = yaml.Unmarshal(cfgContents, &opt)
-	require.NoError(t, err)
-
-	b, err = New(ctx, opt)
-	require.NoError(t, err)
-
-	cleanup := func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
+	cleanStorage := func(ctx context.Context) {
 		blobs, err := b.List(ctx, "")
 		if err != nil {
 			t.Logf("Blobs list error: %s", err)
@@ -69,8 +51,15 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 		err = b.client.RemoveObject(ctx, b.opt.Bucket, b.markerName, minio.RemoveObjectOptions{})
 		require.NoError(t, err)
 	}
-	t.Cleanup(cleanup)
-	cleanup()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		cleanStorage(ctx)
+		if err := container.Terminate(ctx); err != nil {
+			t.Log(err)
+		}
+	})
+	cleanStorage(ctx)
 
 	return b
 }

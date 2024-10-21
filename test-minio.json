@@ -1,9 +1,0 @@
-{
-  "access_key": "minioadmin",
-  "secret_key": "minioadmin",
-  "region": "us-east-1",
-  "bucket": "test-simpleblob",
-  "endpoint_url": "http://127.0.0.1:34730",
-  "init_timeout": "2s",
-  "create_bucket": true
-}
