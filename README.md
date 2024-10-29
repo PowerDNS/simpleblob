@@ -60,11 +60,6 @@ If not, a convenience wrapper for the storage is returned.
 | Memory | ✖ | ✖ |
 
 
-## Limitations
-
-The interface currently does not support streaming of large blobs. In the future we may provide this by implementing `fs.FS` in the backend for reading, and a similar interface for writing new blobs.
-
-
 ## API Stability
 
 We support the last two stable Go versions, currently 1.22 and 1.23.
