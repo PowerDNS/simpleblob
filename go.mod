@@ -7,7 +7,7 @@ toolchain go1.23.2
 require (
 	github.com/PowerDNS/go-tlsconfig v0.0.0-20221101135152-0956853b28df
 	github.com/go-logr/logr v1.4.2
-	github.com/minio/minio-go/v7 v7.0.78
+	github.com/minio/minio-go/v7 v7.0.82
 	github.com/prometheus/client_golang v1.20.4
 	github.com/stretchr/testify v1.9.0
 	github.com/testcontainers/testcontainers-go v0.33.0
