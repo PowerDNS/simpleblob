@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"sort"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/PowerDNS/go-tlsconfig"
 	"github.com/PowerDNS/simpleblob"
@@ -43,17 +43,17 @@ const (
 )
 
 type Options struct {
-	// AccessKey and SecretKey are statically defined here.
+
+	// AccountName and AccountKey are statically defined here.
+
 	AccountName string `yaml:"account_name"`
 	AccountKey  string `yaml:"account_key"`
 
-	// Time between each secrets retrieval.
-	// Minimum is 1s, lower values are considered an error.
-	// It defaults to DefaultSecretsRefreshInterval,
-	// which is currently 15s.
-	SecretsRefreshInterval time.Duration `yaml:"secrets_refresh_interval"`
+	UseEnvCreds bool `yaml:"use_env_creds"`
 
+	// Azure blob container name. If it doesn't exist it will be automatically created if `CreateContainer` is true.
 	Container string `yaml:"container"`
+
 	// CreateBucket tells us to try to create the bucket
 	CreateContainer bool `yaml:"create_container"`
 
@@ -101,6 +101,7 @@ type Options struct {
 	// Each concurrent upload will create a buffer of size BlockSize.  The default value is one.
 	// https://github.com/Azure/azure-sdk-for-go/blob/e5c902ce7aca5aa0f4c7bb7e46c18c8fc91ad458/sdk/storage/azblob/blockblob/models.go#L29
 	Concurrency int `yaml:"concurrency"`
+
 	// Not loaded from YAML
 	Logger logr.Logger `yaml:"-"`
 }
@@ -135,6 +136,7 @@ func (o Options) Check() error {
 // The lifetime of the context passed in must span the lifetime of the whole
 // backend instance, not just the init time, so do not set any timeout on it!
 func New(ctx context.Context, opt Options) (*Backend, error) {
+
 	if opt.InitTimeout == 0 {
 		opt.InitTimeout = DefaultInitTimeout
 	}
@@ -148,6 +150,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	if opt.Concurrency == 0 {
 		opt.Concurrency = DefaultConcurrency
 	}
+
 	if err := opt.Check(); err != nil {
 		return nil, err
 	}
@@ -158,30 +161,83 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	}
 	log = log.WithName("azure")
 
-	// Some of the following calls require a short running context
-	ctx, cancel := context.WithTimeout(ctx, opt.InitTimeout)
-	defer cancel()
+	logrus.WithField("storage_type", "Azure").Info("Inside New farther 🔥")
 
-	cred, err := azblob.NewSharedKeyCredential(opt.AccountName, opt.AccountKey)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to create credential: %v", err)
+	var endpoint string
+
+	accountName := opt.AccountName
+
+	if opt.EndpointURL != "" {
+		endpoint = opt.EndpointURL
+	} else {
+		endpoint = fmt.Sprintf("https://%s.blob.core.windows.net", accountName)
 	}
 
-	client, err := azblob.NewClientWithSharedKeyCredential(opt.EndpointURL, cred, nil)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to create blob client: %v", err)
+	var client *azblob.Client
+
+	// If UseEnvCreds is set, we will attempt to use the environment variables and the Azure service principle based `azidentity.NewDefaultAzureCredential()` method
+	// https://github.com/Azure/azure-sdk-for-go/blob/main/sdk/azidentity/README.md#service-principal-with-secret
+	if opt.UseEnvCreds {
+
+		// Test if the environment variables are set
+		_, ok := os.LookupEnv("AZURE_CLIENT_ID")
+		if !ok {
+			return nil, errors.New("AZURE_CLIENT_ID could not be found")
+		}
+
+		_, ok = os.LookupEnv("AZURE_TENANT_ID")
+		if !ok {
+			return nil, errors.New("AZURE_TENANT_ID could not be found")
+		}
+
+		_, ok = os.LookupEnv("AZURE_CLIENT_SECRET")
+		if !ok {
+			return nil, errors.New("AZURE_CLIENT_SECRET could not be found")
+		}
+
+		cred, err := azidentity.NewDefaultAzureCredential(nil)
+		if err != nil {
+			return nil, err
+		}
+
+		client, err = azblob.NewClient(endpoint, cred, nil)
+
+		if err != nil {
+			return nil, err
+		}
+
+	} else {
+		cred, err := azblob.NewSharedKeyCredential(accountName, opt.AccountKey)
+		if err != nil {
+			return nil, err
+		}
+
+		client, err = azblob.NewClientWithSharedKeyCredential(endpoint, cred, nil)
+
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if opt.CreateContainer {
 		// Create bucket if it does not exist
-		// @TODO add metrics integration
-		// metricCalls.WithLabelValues("create-bucket").Inc()
-		// metricLastCallTimestamp.WithLabelValues("create-bucket").SetToCurrentTime()
+		metricCalls.WithLabelValues("create-container").Inc()
+		metricLastCallTimestamp.WithLabelValues("create-container").SetToCurrentTime()
+
+		logrus.WithField("storage_type", "Azure").Debugf("Attempting to create container! 🟦", opt.CreateContainer)
 
 		_, err := client.CreateContainer(context.TODO(), opt.Container, &azblob.CreateContainerOptions{
 			Metadata: map[string]*string{"hello": to.Ptr("world")},
 		})
-		handleError(err)
+
+		if err != nil {
+			//@TODO handle error and report metrics
+			if strings.Contains(err.Error(), "ContainerAlreadyExists") {
+				logrus.WithField("storage_type", "Azure").Infof("Container already exists: %s", opt.Container)
+			} else {
+				return nil, err
+			}
+		}
 
 		// @TODO log response for creating container
 		//fmt.Println(resp)
@@ -199,8 +255,6 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 }
 
 func (b *Backend) List(ctx context.Context, prefix string) (blobList simpleblob.BlobList, err error) {
-
-	logrus.WithField("storage_type", "Azure").Info("LIST CALLED 😆")
 
 	// Handle global prefix
 	combinedPrefix := b.prependGlobalPrefix(prefix)
@@ -251,8 +305,6 @@ func (b *Backend) List(ctx context.Context, prefix string) (blobList simpleblob.
 func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobList, error) {
 	var blobs simpleblob.BlobList
 
-	logrus.WithField("storage_type", "Azure").Info("Listing blobs 🥱")
-
 	// Runes to strip from blob names for GlobalPrefix
 	// This is fine, because we can trust the API to only return with the prefix.
 	// TODO: trust but verify
@@ -261,12 +313,8 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 	// Use Azure SDK to get blobs from container
 	blobPager := b.client.NewListBlobsFlatPager(b.opt.Container, nil)
 
-	logrus.WithField("storage_type", "Azure").Debugf("%v", blobPager)
-	logrus.WithField("storage_type", "Azure").Debugf("container: %s", b.opt.Container)
-
 	for blobPager.More() {
 		resp, err := blobPager.NextPage(context.TODO())
-		logrus.WithField("storage_type", "Azure").Debugf("RESP Segment ☝️: %v", resp.Segment)
 
 		if err != nil {
 			return nil, err
@@ -275,12 +323,11 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 		// if empty...
 		if resp.Segment == nil {
 			// Container is empty
-			// return nil, errors.New("empty response segment")
 			return blobs, nil
 		}
 
 		for _, v := range resp.Segment.BlobItems {
-			fmt.Printf("Filename: %s \n", *v.Name)
+			// fmt.Printf("Filename: %s \n", *v.Name)
 
 			blobName := *v.Name
 
@@ -326,11 +373,8 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 }
 
 func (b *Backend) doLoadReader(ctx context.Context, name string) (io.ReadCloser, error) {
-	// @TODO add metrics integration
-	// metricCalls.WithLabelValues("load").Inc()
-	// metricLastCallTimestamp.WithLabelValues("load").SetToCurrentTime()
-
-	// obj, err := b.client.GetObject(ctx, b.opt.Bucket, name, minio.GetObjectOptions{})
+	metricCalls.WithLabelValues("load").Inc()
+	metricLastCallTimestamp.WithLabelValues("load").SetToCurrentTime()
 
 	// Download the blob's contents and ensure that the download worked properly
 	blobDownloadResponse, err := b.client.DownloadStream(context.TODO(), b.opt.Container, name, nil)
@@ -340,11 +384,8 @@ func (b *Backend) doLoadReader(ctx context.Context, name string) (io.ReadCloser,
 
 	// Use the bytes.Buffer object to read the downloaded data.
 	// RetryReaderOptions has a lot of in-depth tuning abilities, but for the sake of simplicity, we'll omit those here.
-	// readercontent, err := io.ReadAll(blobDownloadResponse.Body)
 	// Convert the response body to a Reader
 	reader := io.Reader(blobDownloadResponse.Body)
-
-	// fmt.Println(len(readercontent))
 
 	// @TODO do we need to intercept?
 	// if obj == nil {
@@ -370,9 +411,11 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 	name = b.prependGlobalPrefix(name)
 
 	info, err := b.doStore(ctx, name, data)
+
 	if err != nil {
 		return err
 	}
+
 	return b.setMarker(ctx, name, string(*info.ETag), false)
 }
 
@@ -384,31 +427,21 @@ func (b *Backend) doStore(ctx context.Context, name string, data []byte) (azblob
 // doStoreReader stores data with key name in Azure blob, using r as a source for data.
 // The value of size may be -1, in case the size is not known.
 func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader, size int64) (azblob.UploadStreamResponse, error) {
-
-	// @TODO add metrics integration
-	// metricCalls.WithLabelValues("store").Inc()
-	// metricLastCallTimestamp.WithLabelValues("store").SetToCurrentTime()
+	metricCalls.WithLabelValues("store").Inc()
+	metricLastCallTimestamp.WithLabelValues("store").SetToCurrentTime()
 
 	uploadStreamOptions := &azblob.UploadStreamOptions{
-		// Metadata: map[string]*string{"hello": to.Ptr("world")},
 		Concurrency: b.opt.Concurrency,
 	}
-
-	// minio accepts size == -1, meaning the size is unknown.
-	// info, err := b.client.PutObject(ctx, b.opt.container, name, r, size, putObjectOptions)
 
 	// Perform UploadStream
 	resp, err := b.client.UploadStream(ctx, b.opt.Container, name, r, uploadStreamOptions)
 
 	if err != nil {
-		//@TODO handle error and report metrics
+		metricCallErrors.WithLabelValues("store").Inc()
 		return azblob.UploadStreamResponse{}, err
 	}
 
-	// err = convertMinioError(err, false)
-	// if err != nil {
-	// 	metricCallErrors.WithLabelValues("store").Inc()
-	// }
 	return resp, err
 }
 
@@ -425,14 +458,14 @@ func (b *Backend) Delete(ctx context.Context, name string) error {
 }
 
 func (b *Backend) doDelete(ctx context.Context, name string) error {
-	// @TODO add metrics integration
-	// metricCalls.WithLabelValues("delete").Inc()
-	// metricLastCallTimestamp.WithLabelValues("delete").SetToCurrentTime()
+	metricCalls.WithLabelValues("delete").Inc()
+	metricLastCallTimestamp.WithLabelValues("delete").SetToCurrentTime()
 
 	_, err := b.client.DeleteBlob(ctx, b.opt.Container, name, nil)
 
 	if err != nil {
 		//@TODO handle error and report metrics
+		return err
 	}
 
 	return err
@@ -451,12 +484,6 @@ func (b *Backend) prependGlobalPrefix(name string) string {
 	return b.opt.GlobalPrefix + name
 }
 
-func handleError(err error) {
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-}
-
 func init() {
 	simpleblob.RegisterBackend("azure", func(ctx context.Context, p simpleblob.InitParams) (simpleblob.Interface, error) {
 
@@ -465,7 +492,6 @@ func init() {
 			return nil, err
 		}
 		opt.Logger = p.Logger
-		logrus.WithField("storage_type", "Azure").Info("AZURE INITIALIZED 🚀")
 
 		return New(ctx, opt)
 	})
