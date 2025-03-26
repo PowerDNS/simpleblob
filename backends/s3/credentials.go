@@ -29,6 +29,13 @@ type FileSecretsCredentials struct {
 // Retrieve implements credentials.Provider.
 // It reads files pointed to by p.AccessKeyFilename and p.SecretKeyFilename.
 func (c *FileSecretsCredentials) Retrieve() (credentials.Value, error) {
+	return c.RetrieveWithCredContext(nil)
+}
+
+// RetrieveWithCredContext implements credentials.Provider.
+// It reads files pointed to by p.AccessKeyFilename and p.SecretKeyFilename.
+// The [*credentials.CredContext] argument is ignored.
+func (c *FileSecretsCredentials) RetrieveWithCredContext(*credentials.CredContext) (credentials.Value, error) {
 	keyId, err := os.ReadFile(c.AccessKeyFile)
 	if err != nil {
 		return credentials.Value{}, err
