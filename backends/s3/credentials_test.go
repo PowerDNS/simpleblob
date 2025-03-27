@@ -22,7 +22,7 @@ func TestFileSecretsCredentials(t *testing.T) {
 
 	access, secret := secretsPaths(tempDir)
 
-	// Instanciate provider (what we're testing).
+	// Instantiate provider (what we're testing).
 	provider := &s3.FileSecretsCredentials{
 		AccessKeyFile: access,
 		SecretKeyFile: secret,
