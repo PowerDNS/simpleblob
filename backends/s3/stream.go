@@ -64,7 +64,7 @@ type writerWrapper struct {
 }
 
 func (w *writerWrapper) Write(p []byte) (int, error) {
-	// Not checking the status of ctx explicitely because it will be propagated
+	// Not checking the status of ctx explicitly because it will be propagated
 	// from the reader goroutine.
 	return w.pw.Write(p)
 }
