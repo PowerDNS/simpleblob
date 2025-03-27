@@ -1,7 +1,12 @@
 version = "2"
 
 [linters]
-enable = [ "gocritic", "govet" ]
+enable = [
+  "whitespace",
+  "gocritic",
+  "bodyclose",
+  "intrange",
+]
 
 [linters.exclusions]
 generated = "lax"
