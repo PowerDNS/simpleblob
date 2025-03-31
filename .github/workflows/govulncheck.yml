@@ -1,3 +1,5 @@
+name: govulncheck
+
 on:
   pull_request:
   schedule:
@@ -11,4 +13,5 @@ jobs:
   govulncheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: golang/govulncheck-action@v1
+      - id: govulncheck
+        uses: golang/govulncheck-action@v1
