@@ -1,0 +1,14 @@
+on:
+  pull_request:
+  schedule:
+    # 5:11 every Monday
+    - cron: '11 5 * * 1'
+  push:
+    branches:
+      - main
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: golang/govulncheck-action@v1
