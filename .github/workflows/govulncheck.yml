@@ -1,7 +1,6 @@
 name: govulncheck
 
 on:
-  pull_request:
   schedule:
     # 5:11 every Monday
     - cron: '11 5 * * 1'
