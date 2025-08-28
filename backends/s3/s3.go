@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"runtime/debug"
@@ -113,6 +115,35 @@ type Options struct {
 	// checking and bucket creation. It defaults to DefaultInitTimeout, which
 	// is currently 20s.
 	InitTimeout time.Duration `yaml:"init_timeout"`
+
+	// IdleConnTimeout is the maximum amount of time an idle
+	// (keep-alive) connection will remain idle before closing
+	// itself. Default if unset: 90s
+	IdleConnTimeout time.Duration `yaml:"idle_conn_timeout"`
+
+	// MaxIdleConns controls the maximum number of idle (keep-alive)
+	// connections. Default if unset: 100
+	MaxIdleConns int `yaml:"max_idle_conns"`
+
+	// DialTimeout is the maximum amount of time a dial will wait for
+	// a connect to complete. Default if unset: 10s
+	DialTimeout time.Duration `yaml:"dial_timeout"`
+
+	// DialKeepAlive specifies the interval between keep-alive
+	// probes for an active network connection. Default if unset: 10s
+	DialKeepAlive time.Duration `yaml:"dial_keep_alive"`
+
+	// TLSHandshakeTimeout specifies the maximum amount of time to
+	// wait for a TLS handshake. Default if unset: 10s
+	TLSHandshakeTimeout time.Duration `yaml:"tls_handshake_timeout"`
+
+	// ClientTimeout specifies a time limit for requests made by this
+	// HTTP Client. The timeout includes connection time, any
+	// redirects, and reading the response body. The timer remains
+	// running after Get, Head, Post, or Do return and will
+	// interrupt reading of the Response.Body.
+	// Default if unset: 15m
+	ClientTimeout time.Duration `yaml:"client_timeout"`
 
 	// UseUpdateMarker makes the backend write and read a file to determine if
 	// it can cache the last List command. The file contains the name of the
@@ -394,14 +425,33 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Get an opinionated HTTP client that:
+
+	// Create an opinionated HTTP client that:
 	// - Uses a custom tls.Config
 	// - Sets proxies from the environment
 	// - Sets reasonable timeouts on various operations
-	// Check the implementation for details.
-	hc, err := tlsmgr.HTTPClient()
+	// Based on tlsConfig.HTTPClient(), copied to allow overrides.
+	tlsConfig, err := tlsmgr.TLSConfig()
 	if err != nil {
 		return nil, err
+	}
+	transport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   getOpt(opt.DialTimeout, 10*time.Second),
+			KeepAlive: getOpt(opt.DialKeepAlive, 10*time.Second),
+		}).DialContext,
+		MaxIdleConns:          getOpt(opt.MaxIdleConns, 100),
+		IdleConnTimeout:       getOpt(opt.IdleConnTimeout, 90*time.Second),
+		TLSHandshakeTimeout:   getOpt(opt.TLSHandshakeTimeout, 10*time.Second),
+		ExpectContinueTimeout: 10 * time.Second,
+		TLSClientConfig:       tlsConfig,
+		ForceAttemptHTTP2:     true,
+	}
+	hc := &http.Client{
+		Transport: transport,
+		// includes reading response body!
+		Timeout: getOpt(opt.ClientTimeout, 15*time.Minute),
 	}
 
 	// Some of the following calls require a short running context
@@ -503,6 +553,14 @@ func convertMinioError(err error, isList bool) error {
 		return nil
 	}
 	return err
+}
+
+func getOpt[T comparable](optVal, defaultVal T) T {
+	var zero T
+	if optVal == zero {
+		return defaultVal
+	}
+	return optVal
 }
 
 // prependGlobalPrefix prepends the GlobalPrefix to the name/prefix
