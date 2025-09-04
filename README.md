@@ -62,6 +62,6 @@ If not, a convenience wrapper for the storage is returned.
 
 ## API Stability
 
-We support the last two stable Go versions, currently 1.22 and 1.23.
+We support the last two stable Go versions, currently 1.24 and 1.25.
 
 From a API consumer point of view, we do not plan any backward incompatible changes before a v1.0.

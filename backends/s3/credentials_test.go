@@ -22,7 +22,7 @@ func TestFileSecretsCredentials(t *testing.T) {
 
 	access, secret := secretsPaths(tempDir)
 
-	// Instanciate provider (what we're testing).
+	// Instantiate provider (what we're testing).
 	provider := &s3.FileSecretsCredentials{
 		AccessKeyFile: access,
 		SecretKeyFile: secret,
@@ -169,11 +169,11 @@ func secretsPaths(dir string) (access, secret string) {
 // in dir.
 func writeSecrets(t testing.TB, dir, adminUser, password string) {
 	access, secret := secretsPaths(dir)
-	err := os.WriteFile(access, []byte(adminUser), 0666)
+	err := os.WriteFile(access, []byte(adminUser), 0600)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = os.WriteFile(secret, []byte(password), 0666)
+	err = os.WriteFile(secret, []byte(password), 0600)
 	if err != nil {
 		t.Fatal(err)
 	}
