@@ -6,7 +6,7 @@ go test -count=1 "$@" ./...
 
 # Run linters
 # Configure linters in .golangci.yml
-expected_version=2.0.2
+expected_version=2.4.0
 expected_version_full=v"$expected_version"
 golangci_lint_bin=./bin/golangci-lint
 if ! "$golangci_lint_bin" version | grep -wq "version $expected_version"; then
