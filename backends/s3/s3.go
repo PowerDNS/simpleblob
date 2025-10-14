@@ -247,6 +247,7 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 	objCh := b.client.ListObjects(ctx, b.opt.Bucket, minio.ListObjectsOptions{
 		Prefix:    prefix,
 		Recursive: !b.opt.PrefixFolders && !b.opt.HideFolders,
+		UseV1:     false,
 	})
 	for obj := range objCh {
 		// Handle error returned by MinIO client
