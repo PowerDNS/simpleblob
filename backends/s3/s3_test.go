@@ -103,7 +103,7 @@ func TestMetrics(t *testing.T) {
 	_, err = bBadHost.List(context.Background(), "")
 	assert.Error(t, err)
 
-	expectedMetric += "storage_s3_call_error_by_type_total{error=\"lookup nosuchhost: no such host\",method=\"list\"} 1\n"
+	expectedMetric += "storage_s3_call_error_by_type_total{error=\"DNSError\",method=\"list\"} 1\n"
 
 	err = testutil.CollectAndCompare(metricCallErrorsType, strings.NewReader(expectedMetric), "storage_s3_call_error_by_type_total")
 	assert.NoError(t, err)
