@@ -592,11 +592,11 @@ func errorToMetricsLabel(err error) string {
 	}
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
-		return dnsErr.Error()
+		return "DNSError"
 	}
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) {
-		return urlErr.Err.Error()
+		return "URLError"
 	}
 	errRes := minio.ToErrorResponse(err)
 	if errRes.Code != "" {
