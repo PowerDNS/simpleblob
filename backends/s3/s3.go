@@ -571,6 +571,13 @@ func convertMinioError(err error, isList bool) error {
 	return err
 }
 
+// errorToMetricsLabel converts an error into a prometheus label.
+// If error is a NotExist error, "NotFound" is returned.
+// If error is a timeout, "Timeout" is returned.
+// If error is a DNS error, the DNS error is returned.
+// If error is a URL error, the URL error is returned.
+// If error is a MinIO error, the MinIO error code is returned.
+// Otherwise "Unknown" is returned.
 func errorToMetricsLabel(err error) string {
 	if err == nil {
 		return "ok"
@@ -578,11 +585,24 @@ func errorToMetricsLabel(err error) string {
 	if errors.Is(err, os.ErrNotExist) {
 		return "NotFound"
 	}
-	if errors.Is(err, context.DeadlineExceeded) {
+	var netError *net.OpError
+	if errors.Is(err, context.DeadlineExceeded) ||
+		(errors.As(err, &netError) && netError.Timeout()) {
 		return "Timeout"
 	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return dnsErr.Error()
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return urlErr.Err.Error()
+	}
 	errRes := minio.ToErrorResponse(err)
-	return errRes.Code
+	if errRes.Code != "" {
+		return errRes.Code
+	}
+	return "Unknown"
 }
 
 func getOpt[T comparable](optVal, defaultVal T) T {
