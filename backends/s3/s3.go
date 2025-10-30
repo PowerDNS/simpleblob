@@ -236,8 +236,15 @@ func (b *Backend) List(ctx context.Context, prefix string) (blobList simpleblob.
 	return blobs.WithPrefix(prefix), nil
 }
 
+func recordMinioDurationMetric(method string, start time.Time) {
+	elapsed := time.Since(start)
+	metricCallHistogram.WithLabelValues(method).Observe(elapsed.Seconds())
+}
+
 func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobList, error) {
 	var blobs simpleblob.BlobList
+
+	defer recordMinioDurationMetric("list", time.Now())
 
 	// Runes to strip from blob names for GlobalPrefix
 	// This is fine, because we can trust the API to only return with the prefix.
@@ -252,6 +259,7 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 		// Handle error returned by MinIO client
 		if err := convertMinioError(obj.Err, true); err != nil {
 			metricCallErrors.WithLabelValues("list").Inc()
+			metricCallErrorsType.WithLabelValues("list", errorToMetricsLabel(err)).Inc()
 			return nil, err
 		}
 
@@ -303,9 +311,12 @@ func (b *Backend) doLoadReader(ctx context.Context, name string) (io.ReadCloser,
 	metricCalls.WithLabelValues("load").Inc()
 	metricLastCallTimestamp.WithLabelValues("load").SetToCurrentTime()
 
+	defer recordMinioDurationMetric("load", time.Now())
+
 	obj, err := b.client.GetObject(ctx, b.opt.Bucket, name, minio.GetObjectOptions{})
 	if err = convertMinioError(err, false); err != nil {
 		metricCallErrors.WithLabelValues("load").Inc()
+		metricCallErrorsType.WithLabelValues("load", errorToMetricsLabel(err)).Inc()
 		return nil, err
 	}
 	if obj == nil {
@@ -314,6 +325,7 @@ func (b *Backend) doLoadReader(ctx context.Context, name string) (io.ReadCloser,
 	info, err := obj.Stat()
 	if err = convertMinioError(err, false); err != nil {
 		metricCallErrors.WithLabelValues("load").Inc()
+		metricCallErrorsType.WithLabelValues("load", errorToMetricsLabel(err)).Inc()
 		return nil, err
 	}
 	if info.Key == "" {
@@ -347,6 +359,7 @@ func (b *Backend) doStore(ctx context.Context, name string, data []byte) (minio.
 func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader, size int64) (minio.UploadInfo, error) {
 	metricCalls.WithLabelValues("store").Inc()
 	metricLastCallTimestamp.WithLabelValues("store").SetToCurrentTime()
+	defer recordMinioDurationMetric("store", time.Now())
 
 	putObjectOptions := minio.PutObjectOptions{
 		NumThreads:     b.opt.NumMinioThreads,
@@ -358,6 +371,7 @@ func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader, s
 	err = convertMinioError(err, false)
 	if err != nil {
 		metricCallErrors.WithLabelValues("store").Inc()
+		metricCallErrorsType.WithLabelValues("store", errorToMetricsLabel(err)).Inc()
 	}
 	return info, err
 }
@@ -377,10 +391,12 @@ func (b *Backend) Delete(ctx context.Context, name string) error {
 func (b *Backend) doDelete(ctx context.Context, name string) error {
 	metricCalls.WithLabelValues("delete").Inc()
 	metricLastCallTimestamp.WithLabelValues("delete").SetToCurrentTime()
+	defer recordMinioDurationMetric("delete", time.Now())
 
 	err := b.client.RemoveObject(ctx, b.opt.Bucket, name, minio.RemoveObjectOptions{})
 	if err = convertMinioError(err, false); err != nil {
 		metricCallErrors.WithLabelValues("delete").Inc()
+		metricCallErrorsType.WithLabelValues("delete", errorToMetricsLabel(err)).Inc()
 	}
 	return err
 }
@@ -553,6 +569,40 @@ func convertMinioError(err error, isList bool) error {
 		return nil
 	}
 	return err
+}
+
+// errorToMetricsLabel converts an error into a prometheus label.
+// If error is a NotExist error, "NotFound" is returned.
+// If error is a timeout, "Timeout" is returned.
+// If error is a DNS error, the DNS error is returned.
+// If error is a URL error, the URL error is returned.
+// If error is a MinIO error, the MinIO error code is returned.
+// Otherwise "Unknown" is returned.
+func errorToMetricsLabel(err error) string {
+	if err == nil {
+		return "ok"
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return "NotFound"
+	}
+	var netError *net.OpError
+	if errors.Is(err, context.DeadlineExceeded) ||
+		(errors.As(err, &netError) && netError.Timeout()) {
+		return "Timeout"
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return "DNSError"
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return "URLError"
+	}
+	errRes := minio.ToErrorResponse(err)
+	if errRes.Code != "" {
+		return errRes.Code
+	}
+	return "Unknown"
 }
 
 func getOpt[T comparable](optVal, defaultVal T) T {

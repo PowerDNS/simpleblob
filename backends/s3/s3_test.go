@@ -2,10 +2,12 @@ package s3
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/minio/minio-go/v7"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -64,13 +66,47 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 	return b
 }
 
+func getBadBackend(ctx context.Context, url string, t *testing.T) (b *Backend) {
+	b, err := New(ctx, Options{
+		EndpointURL:  url,
+		AccessKey:    "foo",
+		SecretKey:    "bar",
+		Bucket:       "test-bucket",
+		CreateBucket: false,
+		DialTimeout:  1 * time.Second,
+	})
+	require.NoError(t, err)
+	return b
+}
+
 func TestBackend(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-
 	b := getBackend(ctx, t)
 	tester.DoBackendTests(t, b)
 	assert.Len(t, b.lastMarker, 0)
+}
+
+func TestMetrics(t *testing.T) {
+	bTimeout := getBadBackend(context.Background(), "http://1.2.3.4:1234", t)
+
+	_, err := bTimeout.List(context.Background(), "")
+	assert.Error(t, err)
+
+	expectedMetric := "# HELP storage_s3_call_error_by_type_total S3 API call errors by method and error type\n# TYPE storage_s3_call_error_by_type_total counter\nstorage_s3_call_error_by_type_total{error=\"Timeout\",method=\"list\"} 1\nstorage_s3_call_error_by_type_total{error=\"NotFound\",method=\"load\"} 3\n"
+
+	err = testutil.CollectAndCompare(metricCallErrorsType, strings.NewReader(expectedMetric), "storage_s3_call_error_by_type_total")
+	assert.NoError(t, err)
+
+	bBadHost := getBadBackend(context.Background(), "http://nosuchhost:1234", t)
+
+	_, err = bBadHost.List(context.Background(), "")
+	assert.Error(t, err)
+
+	expectedMetric += "storage_s3_call_error_by_type_total{error=\"DNSError\",method=\"list\"} 1\n"
+
+	err = testutil.CollectAndCompare(metricCallErrorsType, strings.NewReader(expectedMetric), "storage_s3_call_error_by_type_total")
+	assert.NoError(t, err)
 }
 
 func TestBackend_marker(t *testing.T) {
