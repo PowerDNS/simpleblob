@@ -79,8 +79,7 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 				t.Logf("Object delete error: %s", err)
 			}
 		}
-		// This one is not returned by the List command
-		// _, err = b.client.DeleteBlob(ctx, b.opt.Container, b.markerName, nil)
+
 		require.NoError(t, err)
 	}
 
@@ -88,12 +87,6 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		cleanStorage(ctx)
-		// Delete the container.
-		// _, err = b.client.DeleteContainer(context.TODO(), b.opt.Container, nil)
-		// if err != nil {
-		// 	log.Printf("failed to delete container: %s", err)
-		// 	return
-		// }
 	})
 	cleanStorage(ctx)
 
