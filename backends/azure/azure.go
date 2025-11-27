@@ -15,6 +15,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
 	"github.com/PowerDNS/go-tlsconfig"
 	"github.com/PowerDNS/simpleblob"
 	"github.com/go-logr/logr"
@@ -221,7 +222,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 		})
 
 		if err != nil {
-			if strings.Contains(err.Error(), "ContainerAlreadyExists") {
+			if bloberror.HasCode(err, bloberror.ContainerAlreadyExists) {
 				logrus.WithField("storage_type", "Azure").Infof("Container already exists: %s", opt.Container)
 			} else {
 				return nil, err
@@ -255,7 +256,7 @@ func (b *Backend) List(ctx context.Context, prefix string) (blobList simpleblob.
 	var notFound bool
 
 	if err != nil {
-		notFound = err.Error() == "BlobNotFound"
+		notFound = bloberror.HasCode(err, bloberror.BlobNotFound)
 	}
 
 	if err != nil && notFound {
