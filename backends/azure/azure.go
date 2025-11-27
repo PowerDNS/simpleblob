@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
@@ -95,7 +94,7 @@ type Options struct {
 
 	// Concurrency defines the max number of concurrent uploads to be performed to upload the file.
 	// Each concurrent upload will create a buffer of size BlockSize.  The default value is one.
-	// https://github.com/Azure/azure-sdk-for-go/blob/e5c902ce7aca5aa0f4c7bb7e46c18c8fc91ad458/sdk/storage/azblob/blockblob/models.go#L29
+	// https://github.com/Azure/azure-sdk-for-go/blob/e5c902ce7aca5aa0f4c7bb7e46c18c8fc91ad458/sdk/storage/azblob/blockblob/models.go#L264
 	Concurrency int `yaml:"concurrency"`
 
 	// Not loaded from YAML
@@ -217,9 +216,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 		metricCalls.WithLabelValues("create-container").Inc()
 		metricLastCallTimestamp.WithLabelValues("create-container").SetToCurrentTime()
 
-		_, err := client.CreateContainer(ctx, opt.Container, &azblob.CreateContainerOptions{
-			Metadata: map[string]*string{"hello": to.Ptr("world")},
-		})
+		_, err := client.CreateContainer(ctx, opt.Container, &azblob.CreateContainerOptions{})
 
 		if err != nil {
 			if bloberror.HasCode(err, bloberror.ContainerAlreadyExists) {
