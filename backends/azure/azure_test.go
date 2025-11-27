@@ -112,7 +112,7 @@ func TestBackend(t *testing.T) {
 	defer tearDown()
 
 	b := getBackend(ctx, t)
-	tester.DoBackendTestsAzure(t, b)
+	tester.DoBackendTests(t, b)
 	assert.Len(t, b.lastMarker, 0)
 }
 
@@ -124,7 +124,7 @@ func TestBackend_marker(t *testing.T) {
 	b := getBackend(ctx, t)
 	b.opt.UseUpdateMarker = true
 
-	tester.DoBackendTestsAzure(t, b)
+	tester.DoBackendTests(t, b)
 	assert.Regexp(t, "^foo-1:[A-Za-z0-9]*:[0-9]+:true$", b.lastMarker)
 	// ^ reflects last write operation of tester.DoBackendTestsAzure
 	//   i.e. deleting "foo-1"
@@ -143,7 +143,7 @@ func TestBackend_globalprefix(t *testing.T) {
 	b := getBackend(ctx, t)
 	b.setGlobalPrefix("v5/")
 
-	tester.DoBackendTestsAzure(t, b)
+	tester.DoBackendTests(t, b)
 	assert.Empty(t, b.lastMarker)
 }
 
@@ -157,6 +157,6 @@ func TestBackend_globalPrefixAndMarker(t *testing.T) {
 	b.setGlobalPrefix("v6/")
 	b.opt.UseUpdateMarker = true
 
-	tester.DoBackendTestsAzure(t, b)
+	tester.DoBackendTests(t, b)
 	assert.NotEmpty(t, b.lastMarker)
 }

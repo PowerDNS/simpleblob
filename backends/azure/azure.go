@@ -250,13 +250,9 @@ func (b *Backend) List(ctx context.Context, prefix string) (blobList simpleblob.
 	// So we're using the raw marker name here.
 	m, err := b.Load(ctx, UpdateMarkerFilename)
 
-	var notFound bool
+	notFound := errors.Is(err, os.ErrNotExist)
 
-	if err != nil {
-		notFound = bloberror.HasCode(err, bloberror.BlobNotFound)
-	}
-
-	if err != nil && notFound {
+	if err != nil && !notFound {
 		return nil, err
 	}
 
@@ -286,6 +282,23 @@ func (b *Backend) List(ctx context.Context, prefix string) (blobList simpleblob.
 	b.mu.Unlock()
 
 	return blobs.WithPrefix(prefix), nil
+}
+
+// convertAzureError takes an error from Azure SDK and converts it to
+// os.ErrNotExist when appropriate (BlobNotFound, ContainerNotFound, ResourceNotFound).
+// If the error is not a "not found" error, it is returned as is.
+func convertAzureError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if bloberror.HasCode(err,
+		bloberror.BlobNotFound,
+		bloberror.ContainerNotFound,
+		bloberror.ResourceNotFound,
+	) {
+		return fmt.Errorf("%w: %s", os.ErrNotExist, err.Error())
+	}
+	return err
 }
 
 func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobList, error) {
@@ -364,7 +377,8 @@ func (b *Backend) doLoadReader(ctx context.Context, name string) (io.ReadCloser,
 
 	// Download the blob's contents and ensure that the download worked properly
 	blobDownloadResponse, err := b.client.DownloadStream(ctx, b.opt.Container, name, nil)
-	if err != nil {
+	if err = convertAzureError(err); err != nil {
+		metricCallErrors.WithLabelValues("load").Inc()
 		return nil, err
 	}
 
@@ -435,12 +449,16 @@ func (b *Backend) doDelete(ctx context.Context, name string) error {
 
 	_, err := b.client.DeleteBlob(ctx, b.opt.Container, name, nil)
 
-	if err != nil {
+	if err = convertAzureError(err); err != nil {
+		// Delete is idempotent - if blob doesn't exist, that's fine
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
 		metricCallErrors.WithLabelValues("delete").Inc()
 		return err
 	}
 
-	return err
+	return nil
 }
 
 // setGlobalPrefix updates the global prefix in b and the cached marker name,

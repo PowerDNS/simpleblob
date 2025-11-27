@@ -3,7 +3,9 @@ package azure
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
+	"os"
 	"testing"
 	"time"
 
@@ -21,7 +23,7 @@ func TestStreamReader(t *testing.T) {
 	reader, err := b.NewReader(ctx, "does-not-exist")
 	assert.Error(t, err)
 	assert.Nil(t, reader)
-	assert.ErrorContains(t, err, "BlobNotFound")
+	assert.True(t, errors.Is(err, os.ErrNotExist), "expected os.ErrNotExist")
 
 	// Store test data
 	testData := []byte("test data for streaming")
@@ -73,7 +75,7 @@ func TestStreamWriter(t *testing.T) {
 	// File should not exist before closing
 	_, err = b.Load(ctx, "test-stream-write")
 	assert.Error(t, err)
-	assert.ErrorContains(t, err, "BlobNotFound")
+	assert.True(t, errors.Is(err, os.ErrNotExist), "expected os.ErrNotExist")
 
 	// Close to finalize the upload
 	err = writer.Close()
