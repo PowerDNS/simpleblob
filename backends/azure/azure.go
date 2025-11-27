@@ -61,16 +61,11 @@ type Options struct {
 	// seamlessly
 	GlobalPrefix string `yaml:"global_prefix"`
 
-	// EndpointURL can be set to something like "http://localhost:9000" when using Minio
-	// or "https://s3.amazonaws.com" for AWS S3.
+	// EndpointURL can be set to something like "http://localhost:9000" for local testing
 	EndpointURL string `yaml:"endpoint_url"`
 
 	// DisableContentMd5 defines whether to disable sending the Content-MD5 header
 	DisableContentMd5 bool `yaml:"disable_send_content_md5"`
-
-	// // NumMinioThreads defines the number of threads that Minio uses for its workers.
-	// // It defaults to the using the default value defined by the Minio client.
-	// NumMinioThreads uint `yaml:"num_minio_threads"`
 
 	// TLS allows customising the TLS configuration
 	// See https://github.com/PowerDNS/go-tlsconfig for the available options
