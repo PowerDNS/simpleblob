@@ -26,7 +26,7 @@ import (
 
 const (
 	// DefaultEndpointURL is the default the local Azurite default endpoint
-	DefaultEndpointURL = "http://127.0.0.1:10000/devstoreaccount1"
+	DefaultEndpointURL = "https://mycontainer.blob.core.windows.net/"
 	// DefaultInitTimeout is the time we allow for initialisation, like credential
 	// checking and bucket creation. We define this here, because we do not
 	// pass a context when initialising a plugin.
