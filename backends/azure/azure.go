@@ -127,7 +127,7 @@ func (o Options) Check() error {
 	hasSecretsCreds := o.AccountName != "" && o.AccountKey != ""
 
 	if !hasSecretsCreds {
-		return fmt.Errorf("azure storage.options: credentials are required, fill either (account_name and account_key)")
+		return fmt.Errorf("azure storage.options: account_name and account_key are required")
 	}
 
 	if o.Container == "" {
