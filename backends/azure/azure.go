@@ -222,7 +222,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 		metricCalls.WithLabelValues("create-container").Inc()
 		metricLastCallTimestamp.WithLabelValues("create-container").SetToCurrentTime()
 
-		_, err := client.CreateContainer(context.TODO(), opt.Container, &azblob.CreateContainerOptions{
+		_, err := client.CreateContainer(ctx, opt.Container, &azblob.CreateContainerOptions{
 			Metadata: map[string]*string{"hello": to.Ptr("world")},
 		})
 
@@ -308,7 +308,7 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 	blobPager := b.client.NewListBlobsFlatPager(b.opt.Container, nil)
 
 	for blobPager.More() {
-		resp, err := blobPager.NextPage(context.TODO())
+		resp, err := blobPager.NextPage(ctx)
 
 		if err != nil {
 			return nil, err
@@ -375,7 +375,7 @@ func (b *Backend) doLoadReader(ctx context.Context, name string) (io.ReadCloser,
 	metricLastCallTimestamp.WithLabelValues("load").SetToCurrentTime()
 
 	// Download the blob's contents and ensure that the download worked properly
-	blobDownloadResponse, err := b.client.DownloadStream(context.TODO(), b.opt.Container, name, nil)
+	blobDownloadResponse, err := b.client.DownloadStream(ctx, b.opt.Container, name, nil)
 	if err != nil {
 		return nil, err
 	}
