@@ -107,8 +107,7 @@ type Options struct {
 }
 
 type Backend struct {
-	opt Options
-	// config     *minio.Options
+	opt        Options
 	client     *azblob.Client
 	log        logr.Logger
 	markerName string
@@ -301,7 +300,6 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 
 	// Runes to strip from blob names for GlobalPrefix
 	// This is fine, because we can trust the API to only return with the prefix.
-	// TODO: trust but verify
 	gpEndIndex := len(b.opt.GlobalPrefix)
 
 	// Use Azure SDK to get blobs from container
@@ -321,8 +319,6 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 		}
 
 		for _, v := range resp.Segment.BlobItems {
-			// fmt.Printf("Filename: %s \n", *v.Name)
-
 			blobName := *v.Name
 
 			// We have to manually check for prefix since Azure doesn't support querying by prefix
@@ -344,8 +340,7 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 		}
 	}
 
-	// Minio appears to return them sorted, but maybe not all implementations
-	// will, so we sort explicitly.
+	// Sort explicitly.
 	sort.Sort(blobs)
 
 	return blobs, nil
@@ -385,20 +380,6 @@ func (b *Backend) doLoadReader(ctx context.Context, name string) (io.ReadCloser,
 	// Convert the response body to a Reader
 	reader := io.Reader(blobDownloadResponse.Body)
 
-	// @TODO do we need to intercept?
-	// if obj == nil {
-	// 	return nil, os.ErrNotExist
-	// }
-	// info, err := obj.Stat()
-	// if err = convertMinioError(err, false); err != nil {
-	// 	metricCallErrors.WithLabelValues("load").Inc()
-	// 	return nil, err
-	// }
-	// if info.Key == "" {
-	// 	// minio will return an object with empty fields when name
-	// 	// is not present in bucket.
-	// 	return nil, os.ErrNotExist
-	// }
 	return io.NopCloser(reader), nil
 }
 
