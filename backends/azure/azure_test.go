@@ -3,7 +3,6 @@ package azure
 import (
 	"context"
 	"fmt"
-	"log"
 	"testing"
 	"time"
 
@@ -27,23 +26,20 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 	)
 
 	if err != nil {
-		log.Printf("failed to start container: %s", err)
-		return
+		t.Fatalf("failed to start container: %v", err)
 	}
 
 	state, err := azuriteContainer.State(ctx)
 	if err != nil {
-		log.Printf("failed to get container state: %s", err)
-		return
+		t.Fatalf("failed to get container state: %v", err)
 	}
 
-	fmt.Println(state.Running)
+	t.Log(state.Running)
 
 	// using the built-in shared key credential type
 	cred, err := azblob.NewSharedKeyCredential(azurite.AccountName, azurite.AccountKey)
 	if err != nil {
-		log.Printf("failed to create shared key credential: %s", err)
-		return
+		t.Fatalf("failed to create shared key credential: %v", err)
 	}
 
 	// create an azblob.Client for the specified storage account that uses the above credentials
@@ -51,8 +47,7 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 
 	client, err := azblob.NewClientWithSharedKeyCredential(blobServiceURL, cred, nil)
 	if err != nil {
-		log.Printf("failed to create client: %s", err)
-		return
+		t.Fatalf("failed to create client: %v", err)
 	}
 
 	b, err = New(ctx, Options{
@@ -69,14 +64,13 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 	cleanStorage := func(ctx context.Context) {
 		blobs, err := b.List(ctx, "")
 		if err != nil {
-			t.Logf("Blobs list error: %s", err)
-			return
+			t.Fatalf("Blobs list error: %v", err)
 		}
 
 		for _, blob := range blobs {
 			err := b.Delete(ctx, blob.Name)
 			if err != nil {
-				t.Logf("Object delete error: %s", err)
+				t.Fatalf("Object delete error: %v", err)
 			}
 		}
 
@@ -93,16 +87,16 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 	return b
 }
 
-func tearDown() {
+func tearDown(t *testing.T) {
 	if err := testcontainers.TerminateContainer(azuriteContainer); err != nil {
-		log.Printf("failed to terminate container: %s", err)
+		t.Fatalf("failed to terminate container: %v", err)
 	}
 }
 
 func TestBackend(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	defer tearDown()
+	defer tearDown(t)
 
 	b := getBackend(ctx, t)
 	tester.DoBackendTests(t, b)
@@ -112,7 +106,7 @@ func TestBackend(t *testing.T) {
 func TestBackend_marker(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	defer tearDown()
+	defer tearDown(t)
 
 	b := getBackend(ctx, t)
 	b.opt.UseUpdateMarker = true
@@ -131,7 +125,7 @@ func TestBackend_marker(t *testing.T) {
 func TestBackend_globalprefix(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	defer tearDown()
+	defer tearDown(t)
 
 	b := getBackend(ctx, t)
 	b.setGlobalPrefix("v5/")
@@ -143,7 +137,7 @@ func TestBackend_globalprefix(t *testing.T) {
 func TestBackend_globalPrefixAndMarker(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	defer tearDown()
+	defer tearDown(t)
 
 	// Start the backend over
 	b := getBackend(ctx, t)

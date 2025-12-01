@@ -15,7 +15,7 @@ import (
 func TestStreamReader(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	defer tearDown()
+	defer tearDown(t)
 
 	b := getBackend(ctx, t)
 
@@ -59,7 +59,7 @@ func TestStreamReader(t *testing.T) {
 func TestStreamWriter(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	defer tearDown()
+	defer tearDown(t)
 
 	b := getBackend(ctx, t)
 
@@ -115,7 +115,7 @@ func TestStreamWriter(t *testing.T) {
 func TestStreamLargeData(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	defer tearDown()
+	defer tearDown(t)
 
 	b := getBackend(ctx, t)
 
@@ -172,7 +172,7 @@ func TestStreamLargeData(t *testing.T) {
 func TestStreamMultipleWrites(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	defer tearDown()
+	defer tearDown(t)
 
 	b := getBackend(ctx, t)
 
