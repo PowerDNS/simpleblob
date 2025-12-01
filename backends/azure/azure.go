@@ -25,8 +25,6 @@ import (
 //https://github.com/Azure/azure-sdk-for-go/blob/main/sdk/storage/azblob/examples_test.go
 
 const (
-	// DefaultEndpointURL is the default the local Azurite default endpoint
-	DefaultEndpointURL = "https://mycontainer.blob.core.windows.net/"
 	// DefaultInitTimeout is the time we allow for initialisation, like credential
 	// checking and bucket creation. We define this here, because we do not
 	// pass a context when initialising a plugin.
@@ -45,7 +43,6 @@ const (
 type Options struct {
 
 	// AccountName and AccountKey are statically defined here.
-
 	AccountName string `yaml:"account_name"`
 	AccountKey  string `yaml:"account_key"`
 
@@ -141,9 +138,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	if opt.UpdateMarkerForceListInterval == 0 {
 		opt.UpdateMarkerForceListInterval = DefaultUpdateMarkerForceListInterval
 	}
-	if opt.EndpointURL == "" {
-		opt.EndpointURL = DefaultEndpointURL
-	}
+
 	if opt.Concurrency == 0 {
 		opt.Concurrency = DefaultConcurrency
 	}
