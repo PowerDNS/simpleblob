@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"os"
 	"runtime/debug"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -284,7 +283,7 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 
 	// Minio appears to return them sorted, but maybe not all implementations
 	// will, so we sort explicitly.
-	sort.Sort(blobs)
+	blobs.Sort()
 
 	return blobs, nil
 }
