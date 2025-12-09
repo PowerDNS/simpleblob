@@ -18,6 +18,7 @@ func (bl BlobList) Len() int {
 	return len(bl)
 }
 
+// Sort sorts the [Blob] items in bl by name.
 func (bl BlobList) Sort() {
 	slices.SortFunc(bl, func(a, b Blob) int {
 		return strings.Compare(a.Name, b.Name)
