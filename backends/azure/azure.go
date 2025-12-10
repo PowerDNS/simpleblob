@@ -46,7 +46,7 @@ type Options struct {
 	AccountName string `yaml:"account_name"`
 	AccountKey  string `yaml:"account_key"`
 
-	UseEnvCreds bool `yaml:"use_env_creds"`
+	UseSharedKey bool `yaml:"use_shared_key"`
 
 	// Azure blob container name. If it doesn't exist it will be automatically created if `CreateContainer` is true.
 	Container string `yaml:"container"`
@@ -111,8 +111,12 @@ type Backend struct {
 }
 
 func (o Options) Check() error {
-	if o.UseEnvCreds {
+	if o.UseSharedKey {
 		return nil
+	}
+
+	if o.Container == "" {
+		return fmt.Errorf("azure storage.options: container is required")
 	}
 
 	hasSecretsCreds := o.AccountName != "" && o.AccountKey != ""
@@ -121,9 +125,6 @@ func (o Options) Check() error {
 		return fmt.Errorf("azure storage.options: account_name and account_key are required")
 	}
 
-	if o.Container == "" {
-		return fmt.Errorf("azure storage.options: container is required")
-	}
 	return nil
 }
 
@@ -165,47 +166,35 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 
 	var client *azblob.Client
 
-	// If UseEnvCreds is set, we will attempt to use the environment variables and the Azure service principle based `azidentity.NewDefaultAzureCredential()` method
+	// Default path: let the Azure SDK decide how to authenticate
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err = azblob.NewClient(endpoint, cred, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// If UseSharedKey is set, we will attempt to use the environment variables and the Azure service principle based `azidentity.NewDefaultAzureCredential()` method
 	// https://github.com/Azure/azure-sdk-for-go/blob/main/sdk/azidentity/README.md#service-principal-with-secret
-	if opt.UseEnvCreds {
-		// Test if the environment variables are set
-		_, ok := os.LookupEnv("AZURE_CLIENT_ID")
-		if !ok {
-			return nil, errors.New("AZURE_CLIENT_ID could not be found")
+	if opt.UseSharedKey {
+		if opt.AccountName == "" || opt.AccountKey == "" {
+			return nil, errors.New("AccountName and AccountKey are required when UseSharedKey is true")
 		}
 
-		_, ok = os.LookupEnv("AZURE_TENANT_ID")
-		if !ok {
-			return nil, errors.New("AZURE_TENANT_ID could not be found")
-		}
-
-		_, ok = os.LookupEnv("AZURE_CLIENT_SECRET")
-		if !ok {
-			return nil, errors.New("AZURE_CLIENT_SECRET could not be found")
-		}
-
-		cred, err := azidentity.NewDefaultAzureCredential(nil)
-		if err != nil {
-			return nil, err
-		}
-
-		client, err = azblob.NewClient(endpoint, cred, nil)
-
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		cred, err := azblob.NewSharedKeyCredential(accountName, opt.AccountKey)
+		cred, err := azblob.NewSharedKeyCredential(opt.AccountName, opt.AccountKey)
 		if err != nil {
 			return nil, err
 		}
 
 		client, err = azblob.NewClientWithSharedKeyCredential(endpoint, cred, nil)
-
 		if err != nil {
 			return nil, err
 		}
 	}
+
 	if opt.CreateContainer {
 		// Create bucket if it does not exist
 		metricCalls.WithLabelValues("create-container").Inc()
