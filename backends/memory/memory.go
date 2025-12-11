@@ -3,7 +3,6 @@ package memory
 import (
 	"context"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 
@@ -30,7 +29,7 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 	}
 	b.mu.Unlock()
 
-	sort.Sort(blobs)
+	blobs.Sort()
 	return blobs, nil
 }
 

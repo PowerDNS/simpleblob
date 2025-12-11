@@ -1,6 +1,7 @@
 package simpleblob
 
 import (
+	"slices"
 	"strings"
 )
 
@@ -17,12 +18,11 @@ func (bl BlobList) Len() int {
 	return len(bl)
 }
 
-func (bl BlobList) Less(i, j int) bool {
-	return bl[i].Name < bl[j].Name
-}
-
-func (bl BlobList) Swap(i, j int) {
-	bl[i], bl[j] = bl[j], bl[i]
+// Sort sorts the [Blob] items in bl by name.
+func (bl BlobList) Sort() {
+	slices.SortFunc(bl, func(a, b Blob) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 }
 
 // Names returns a slice of name strings for the BlobList
