@@ -56,6 +56,7 @@ If not, a convenience wrapper for the storage is returned.
 | Backend | StreamReader | StreamWriter |
 | --- | --- | --- |
 | S3 | ✔ | ✔ |
+| Azure | ✔ | ✔ |
 | Filesystem | ✔ | ✔ |
 | Memory | ✖ | ✖ |
 
