@@ -111,18 +111,15 @@ type Backend struct {
 }
 
 func (o Options) Check() error {
-	if o.UseSharedKey {
-		return nil
-	}
-
 	if o.Container == "" {
 		return fmt.Errorf("azure storage.options: container is required")
 	}
 
-	hasSecretsCreds := o.AccountName != "" && o.AccountKey != ""
-
-	if !hasSecretsCreds {
-		return fmt.Errorf("azure storage.options: account_name and account_key are required")
+	if o.UseSharedKey {
+		hasSecretsCreds := o.AccountName != "" && o.AccountKey != ""
+		if !hasSecretsCreds {
+			return fmt.Errorf("azure storage.options: account_name and account_key are required when use_shared_key is true")
+		}
 	}
 
 	return nil
@@ -177,7 +174,8 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 		return nil, err
 	}
 
-	// If UseSharedKey is set, we will attempt to use the environment variables and the Azure service principle based `azidentity.NewDefaultAzureCredential()` method
+	// If UseSharedKey is true, authenticate using shared key credentials with AccountName and AccountKey.
+	// Otherwise, DefaultAzureCredential is used (service principal via environment variables).
 	// https://github.com/Azure/azure-sdk-for-go/blob/main/sdk/azidentity/README.md#service-principal-with-secret
 	if opt.UseSharedKey {
 		if opt.AccountName == "" || opt.AccountKey == "" {
