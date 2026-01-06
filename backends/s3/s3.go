@@ -314,8 +314,10 @@ func (b *Backend) doLoadReader(ctx context.Context, name string) (io.ReadCloser,
 
 	obj, err := b.client.GetObject(ctx, b.opt.Bucket, name, minio.GetObjectOptions{})
 	if err = convertMinioError(err, false); err != nil {
-		metricCallErrors.WithLabelValues("load").Inc()
-		metricCallErrorsType.WithLabelValues("load", errorToMetricsLabel(err)).Inc()
+		if !errors.Is(err, os.ErrNotExist) {
+			metricCallErrors.WithLabelValues("load").Inc()
+			metricCallErrorsType.WithLabelValues("load", errorToMetricsLabel(err)).Inc()
+		}
 		return nil, err
 	}
 	if obj == nil {
@@ -323,8 +325,10 @@ func (b *Backend) doLoadReader(ctx context.Context, name string) (io.ReadCloser,
 	}
 	info, err := obj.Stat()
 	if err = convertMinioError(err, false); err != nil {
-		metricCallErrors.WithLabelValues("load").Inc()
-		metricCallErrorsType.WithLabelValues("load", errorToMetricsLabel(err)).Inc()
+		if !errors.Is(err, os.ErrNotExist) {
+			metricCallErrors.WithLabelValues("load").Inc()
+			metricCallErrorsType.WithLabelValues("load", errorToMetricsLabel(err)).Inc()
+		}
 		return nil, err
 	}
 	if info.Key == "" {
@@ -561,7 +565,7 @@ func convertMinioError(err error, isList bool) error {
 		return nil
 	}
 	errRes := minio.ToErrorResponse(err)
-	if !isList && errRes.StatusCode == 404 {
+	if !isList && errRes.Code == "NoSuchKey" {
 		return fmt.Errorf("%w: %s", os.ErrNotExist, err.Error())
 	}
 	if errRes.Code == "BucketAlreadyOwnedByYou" {
