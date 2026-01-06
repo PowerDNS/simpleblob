@@ -565,9 +565,9 @@ func convertMinioError(err error, isList bool) error {
 		return nil
 	}
 	errRes := minio.ToErrorResponse(err)
-	// Not considering `errRes.StatusCode`,
-	// since value 404 is used for both a missing key and a missing bucket,
-	// and we want to differentiate between the two.
+	// We need to differentiate between a missing bucket and a missing key,
+	// because a missing bucket is the result of missing rights or a deletion from the outside.
+	// Thus, we do not use `errRes.StatusCode` that would be == 404 for either case.
 	if !isList && errRes.Code == "NoSuchKey" {
 		return fmt.Errorf("%w: %s", os.ErrNotExist, err.Error())
 	}
