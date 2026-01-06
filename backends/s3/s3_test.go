@@ -38,11 +38,10 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 	require.NoError(t, err)
 
 	cleanStorage := func(ctx context.Context) {
-		blobs, err := b.List(ctx, "")
-		if err != nil {
-			t.Logf("Blobs list error: %s", err)
+		if exists, _ := b.client.BucketExists(ctx, b.opt.Bucket); !exists {
 			return
 		}
+		blobs, _ := b.List(ctx, "")
 		for _, blob := range blobs {
 			err := b.Delete(ctx, blob.Name)
 			if err != nil {
@@ -84,6 +83,7 @@ func TestMetrics(t *testing.T) {
 	var (
 		_    = b.Store(t.Context(), "my-key", []byte{})
 		_, _ = b.Load(t.Context(), "my-key")
+		_    = b.Delete(t.Context(), "my-key")
 		_, _ = b.Load(t.Context(), "no-such-key") // ErrNotExist is not collected
 		_    = b.Delete(t.Context(), "no-such-key")
 		_, _ = b.List(t.Context(), "")
@@ -91,13 +91,13 @@ func TestMetrics(t *testing.T) {
 	assert.Equal(t, 0, testutil.CollectAndCount(metricCallErrorsType, metricName))
 
 	// A failed operation generates metrics.
-	_ = b.Delete(t.Context(), "my-key") // We need to empty the bucket before removing it
 	_ = b.client.RemoveBucket(t.Context(), b.opt.Bucket)
 	assert.Error(t, b.Store(t.Context(), "no-more-bucket", []byte{})) // Fails due to missing bucket
 	assert.Equal(t, 1, testutil.CollectAndCount(metricCallErrorsType, metricName))
 	p, err := testutil.CollectAndFormat(metricCallErrorsType, expfmt.TypeProtoCompact, metricName)
 	require.NoError(t, err)
-	assert.Contains(t, string(p), "NoSuchBucket")
+	assert.Regexp(t, `label:{name:"method"\s+value:"store"}`, string(p))
+	assert.Regexp(t, `label:{name:"error"\s+value:"NoSuchBucket"}`, string(p))
 }
 
 func TestBackend_marker(t *testing.T) {
