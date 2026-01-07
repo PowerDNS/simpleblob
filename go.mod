@@ -12,7 +12,7 @@ require (
 	github.com/prometheus/common v0.65.0
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.40.0
-	github.com/testcontainers/testcontainers-go/modules/minio v0.38.0
+	github.com/testcontainers/testcontainers-go/modules/minio v0.40.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
