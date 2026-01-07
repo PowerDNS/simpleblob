@@ -314,8 +314,10 @@ func (b *Backend) doLoadReader(ctx context.Context, name string) (io.ReadCloser,
 
 	obj, err := b.client.GetObject(ctx, b.opt.Bucket, name, minio.GetObjectOptions{})
 	if err = convertMinioError(err, false); err != nil {
-		metricCallErrors.WithLabelValues("load").Inc()
-		metricCallErrorsType.WithLabelValues("load", errorToMetricsLabel(err)).Inc()
+		if !errors.Is(err, os.ErrNotExist) {
+			metricCallErrors.WithLabelValues("load").Inc()
+			metricCallErrorsType.WithLabelValues("load", errorToMetricsLabel(err)).Inc()
+		}
 		return nil, err
 	}
 	if obj == nil {
@@ -323,8 +325,10 @@ func (b *Backend) doLoadReader(ctx context.Context, name string) (io.ReadCloser,
 	}
 	info, err := obj.Stat()
 	if err = convertMinioError(err, false); err != nil {
-		metricCallErrors.WithLabelValues("load").Inc()
-		metricCallErrorsType.WithLabelValues("load", errorToMetricsLabel(err)).Inc()
+		if !errors.Is(err, os.ErrNotExist) {
+			metricCallErrors.WithLabelValues("load").Inc()
+			metricCallErrorsType.WithLabelValues("load", errorToMetricsLabel(err)).Inc()
+		}
 		return nil, err
 	}
 	if info.Key == "" {
@@ -561,7 +565,10 @@ func convertMinioError(err error, isList bool) error {
 		return nil
 	}
 	errRes := minio.ToErrorResponse(err)
-	if !isList && errRes.StatusCode == 404 {
+	// We need to differentiate between a missing bucket and a missing key,
+	// because a missing bucket is the result of missing rights or a deletion from the outside.
+	// Thus, we do not use `errRes.StatusCode` that would be == 404 for either case.
+	if !isList && errRes.Code == "NoSuchKey" {
 		return fmt.Errorf("%w: %s", os.ErrNotExist, err.Error())
 	}
 	if errRes.Code == "BucketAlreadyOwnedByYou" {
