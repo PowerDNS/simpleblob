@@ -3,12 +3,19 @@
 # The arguments passed to this script will be passed to the `go test` command.
 #
 # Note that the tests rely on testcontainers.
-# In case no Docker daemon is present, we fallback to Podman.
+# In case no Docker daemon is configured, we fallback to Podman.
 # Using Podman can be forced by setting the SB_TESTS_FORCE_PODMAN to a non-empty value.
 set -e
 
-# Default to Docker but use Podman if required.
-if [ "$SB_TESTS_FORCE_PODMAN" ] || { [ -z "$DOCKER_HOST" ] && [ ! -e "/var/run/docker.sock" ]; }; then
+# Default to Docker but use Podman if any of those is true:
+#  - DOCKER_HOST is not set.
+#  - the `docker` command does not exist.
+#  - the Docker daemon is not running.
+#  - SB_TESTS_FORCE_PODMAN is not empty.
+if [ -z "${SB_TESTS_FORCE_PODMAN}${DOCKER_HOST}" ] && command -v docker >/dev/null; then
+    docker_endpoint="$(docker context ls --format '{{if .Current}}{{.DockerEndpoint}}{{end}}' 2>/dev/null || true)"
+fi
+if [ "$SB_TESTS_FORCE_PODMAN" ] || [ -z "${DOCKER_HOST}${docker_endpoint}" ]; then
     # See https://podman-desktop.io/tutorial/testcontainers-with-podman#setup-testcontainers-with-podman
     if ! command -v podman >/dev/null; then
         echo "Neither Podman CLI or a Docker daemon were found."
