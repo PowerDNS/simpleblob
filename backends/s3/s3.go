@@ -70,6 +70,10 @@ type Options struct {
 	// Region defaults to "us-east-1", which also works for Minio
 	Region string `yaml:"region"`
 	Bucket string `yaml:"bucket"`
+
+	// StorageClass allows setting the S3 Storage Class only when storing objects.
+	StorageClass string `yaml:"storage_class"`
+
 	// CreateBucket tells us to try to create the bucket
 	CreateBucket bool `yaml:"create_bucket"`
 
@@ -367,6 +371,7 @@ func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader, s
 	putObjectOptions := minio.PutObjectOptions{
 		NumThreads:     b.opt.NumMinioThreads,
 		SendContentMd5: !b.opt.DisableContentMd5,
+		StorageClass:   b.opt.StorageClass,
 	}
 
 	// minio accepts size == -1, meaning the size is unknown.
