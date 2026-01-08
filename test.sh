@@ -7,11 +7,7 @@
 # Using Podman can be forced by setting the SB_TESTS_FORCE_PODMAN to a non-empty value.
 set -e
 
-# Default to Docker but use Podman if any of those is true:
-#  - DOCKER_HOST is not set.
-#  - the `docker` command does not exist.
-#  - the Docker daemon is not running.
-#  - SB_TESTS_FORCE_PODMAN is not empty.
+# Use Podman if no Docker endpoint is defined or found, or if SB_TESTS_FORCE_PODMAN is not empty.
 if [ -z "${SB_TESTS_FORCE_PODMAN}${DOCKER_HOST}" ] && command -v docker >/dev/null; then
     docker_endpoint="$(docker context ls --format '{{if .Current}}{{.DockerEndpoint}}{{end}}' 2>/dev/null || true)"
 fi
