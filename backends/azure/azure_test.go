@@ -54,6 +54,7 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 
 	b, err = New(ctx, Options{
 		EndpointURL:     blobServiceURL,
+		UseSharedKey:    true,
 		AccountName:     azurite.AccountName,
 		AccountKey:      azurite.AccountKey,
 		Container:       "test-container",
