@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/PowerDNS/simpleblob"
@@ -56,9 +55,7 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 		})
 	}
 
-	sort.Slice(blobs, func(i, j int) bool {
-		return blobs[i].Name < blobs[j].Name
-	})
+	blobs.Sort()
 	return blobs, nil
 }
 

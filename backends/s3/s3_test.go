@@ -2,12 +2,12 @@ package s3
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/expfmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -38,11 +38,10 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 	require.NoError(t, err)
 
 	cleanStorage := func(ctx context.Context) {
-		blobs, err := b.List(ctx, "")
-		if err != nil {
-			t.Logf("Blobs list error: %s", err)
+		if exists, _ := b.client.BucketExists(ctx, b.opt.Bucket); !exists {
 			return
 		}
+		blobs, _ := b.List(ctx, "")
 		for _, blob := range blobs {
 			err := b.Delete(ctx, blob.Name)
 			if err != nil {
@@ -66,19 +65,6 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 	return b
 }
 
-func getBadBackend(ctx context.Context, url string, t *testing.T) (b *Backend) {
-	b, err := New(ctx, Options{
-		EndpointURL:  url,
-		AccessKey:    "foo",
-		SecretKey:    "bar",
-		Bucket:       "test-bucket",
-		CreateBucket: false,
-		DialTimeout:  1 * time.Second,
-	})
-	require.NoError(t, err)
-	return b
-}
-
 func TestBackend(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -88,25 +74,30 @@ func TestBackend(t *testing.T) {
 }
 
 func TestMetrics(t *testing.T) {
-	bTimeout := getBadBackend(context.Background(), "http://1.2.3.4:1234", t)
+	metricName := "storage_s3_call_error_by_type_total"
+	metricCallErrorsType.Reset() // Ensure no metrics are left from other tests
+	b := getBackend(t.Context(), t)
 
-	_, err := bTimeout.List(context.Background(), "")
-	assert.Error(t, err)
+	// Operations on a healthy backend do not collect any metrics.
+	assert.Equal(t, 0, testutil.CollectAndCount(metricCallErrorsType, metricName))
+	var (
+		_    = b.Store(t.Context(), "my-key", []byte{})
+		_, _ = b.Load(t.Context(), "my-key")
+		_    = b.Delete(t.Context(), "my-key")
+		_, _ = b.Load(t.Context(), "no-such-key") // ErrNotExist is not collected
+		_    = b.Delete(t.Context(), "no-such-key")
+		_, _ = b.List(t.Context(), "")
+	)
+	assert.Equal(t, 0, testutil.CollectAndCount(metricCallErrorsType, metricName))
 
-	expectedMetric := "# HELP storage_s3_call_error_by_type_total S3 API call errors by method and error type\n# TYPE storage_s3_call_error_by_type_total counter\nstorage_s3_call_error_by_type_total{error=\"Timeout\",method=\"list\"} 1\nstorage_s3_call_error_by_type_total{error=\"NotFound\",method=\"load\"} 3\n"
-
-	err = testutil.CollectAndCompare(metricCallErrorsType, strings.NewReader(expectedMetric), "storage_s3_call_error_by_type_total")
-	assert.NoError(t, err)
-
-	bBadHost := getBadBackend(context.Background(), "http://nosuchhost:1234", t)
-
-	_, err = bBadHost.List(context.Background(), "")
-	assert.Error(t, err)
-
-	expectedMetric += "storage_s3_call_error_by_type_total{error=\"DNSError\",method=\"list\"} 1\n"
-
-	err = testutil.CollectAndCompare(metricCallErrorsType, strings.NewReader(expectedMetric), "storage_s3_call_error_by_type_total")
-	assert.NoError(t, err)
+	// A failed operation generates metrics.
+	_ = b.client.RemoveBucket(t.Context(), b.opt.Bucket)
+	assert.Error(t, b.Store(t.Context(), "no-more-bucket", []byte{})) // Fails due to missing bucket
+	assert.Equal(t, 1, testutil.CollectAndCount(metricCallErrorsType, metricName))
+	p, err := testutil.CollectAndFormat(metricCallErrorsType, expfmt.TypeProtoCompact, metricName)
+	require.NoError(t, err)
+	assert.Regexp(t, `label:{name:"method"\s+value:"store"}`, string(p))
+	assert.Regexp(t, `label:{name:"error"\s+value:"NoSuchBucket"}`, string(p))
 }
 
 func TestBackend_marker(t *testing.T) {
