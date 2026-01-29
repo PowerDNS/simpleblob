@@ -6,7 +6,7 @@ toolchain go1.25.1
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
-	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.3
+	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.4
 	github.com/PowerDNS/go-tlsconfig v0.0.0-20221101135152-0956853b28df
 	github.com/go-logr/logr v1.4.3
 	github.com/minio/minio-go/v7 v7.0.98
