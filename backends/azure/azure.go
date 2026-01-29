@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -329,7 +328,7 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 	}
 
 	// Sort explicitly.
-	sort.Sort(blobs)
+	blobs.Sort()
 
 	return blobs, nil
 }

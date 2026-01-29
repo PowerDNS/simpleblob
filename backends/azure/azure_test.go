@@ -6,24 +6,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/azurite"
+	"github.com/testcontainers/testcontainers-go/modules/azure/azurite"
 
 	"github.com/PowerDNS/simpleblob/tester"
 )
 
-var azuriteContainer *azurite.AzuriteContainer
+var azuriteContainer *azurite.Container
 
 func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 	testcontainers.SkipIfProviderIsNotHealthy(t)
 
-	azuriteContainer, err := azurite.Run(ctx, "mcr.microsoft.com/azure-storage/azurite")
+	azuriteContainer, err := azurite.Run(ctx, "mcr.microsoft.com/azure-storage/azurite", azurite.WithEnabledServices(azurite.BlobService))
 	t.Cleanup(func() {
 		if err := testcontainers.TerminateContainer(azuriteContainer); err != nil {
-			log.Printf("failed to terminate container: %s", err)
+			t.Errorf("failed to terminate container: %s", err)
 		}
 	})
 
@@ -38,29 +37,20 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 
 	t.Log(state.Running)
 
-	// using the built-in shared key credential type
-	cred, err := azblob.NewSharedKeyCredential(azurite.AccountName, azurite.AccountKey)
-	if err != nil {
-		t.Fatalf("failed to create shared key credential: %v", err)
-	}
+	serviceURL, err := azuriteContainer.BlobServiceURL(ctx)
+	require.NoError(t, err)
 
 	// create an azblob.Client for the specified storage account that uses the above credentials
-	blobServiceURL := fmt.Sprintf("%s/%s", azuriteContainer.MustServiceURL(ctx, azurite.BlobService), azurite.AccountName)
-
-	client, err := azblob.NewClientWithSharedKeyCredential(blobServiceURL, cred, nil)
-	if err != nil {
-		t.Fatalf("failed to create client: %v", err)
-	}
+	blobServiceURL := fmt.Sprintf("%s/%s", serviceURL, azurite.AccountName)
 
 	b, err = New(ctx, Options{
 		EndpointURL:     blobServiceURL,
+		UseSharedKey:    true,
 		AccountName:     azurite.AccountName,
 		AccountKey:      azurite.AccountKey,
 		Container:       "test-container",
 		CreateContainer: true,
 	})
-
-	b.client = client
 	require.NoError(t, err)
 
 	cleanStorage := func(ctx context.Context) {
