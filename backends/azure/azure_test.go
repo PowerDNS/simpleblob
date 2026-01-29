@@ -19,7 +19,7 @@ var azuriteContainer *azurite.Container
 func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 	testcontainers.SkipIfProviderIsNotHealthy(t)
 
-	azuriteContainer, err := azurite.Run(ctx, "mcr.microsoft.com/azure-storage/azurite:3.35.0", azurite.WithEnabledServices(azurite.BlobService))
+	azuriteContainer, err := azurite.Run(ctx, "mcr.microsoft.com/azure-storage/azurite", azurite.WithEnabledServices(azurite.BlobService))
 	t.Cleanup(func() {
 		if err := testcontainers.TerminateContainer(azuriteContainer); err != nil {
 			t.Errorf("failed to terminate container: %s", err)
