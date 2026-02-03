@@ -16,6 +16,9 @@ type Backend struct {
 
 func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList, error) {
 	var blobs simpleblob.BlobList
+	if err := ctx.Err(); err != nil {
+		return blobs, err
+	}
 
 	b.mu.Lock()
 	for name, data := range b.blobs {
@@ -34,6 +37,9 @@ func (b *Backend) List(ctx context.Context, prefix string) (simpleblob.BlobList,
 }
 
 func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	b.mu.Lock()
 	data, exists := b.blobs[name]
 	b.mu.Unlock()
@@ -47,6 +53,9 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 }
 
 func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	dataCopy := make([]byte, len(data))
 	copy(dataCopy, data)
 
@@ -58,6 +67,9 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 }
 
 func (b *Backend) Delete(ctx context.Context, name string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	delete(b.blobs, name)
@@ -70,6 +82,9 @@ func New() *Backend {
 
 func init() {
 	simpleblob.RegisterBackend("memory", func(ctx context.Context, p simpleblob.InitParams) (simpleblob.Interface, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return New(), nil
 	})
 }
