@@ -3,43 +3,32 @@
 # The arguments passed to this script will be passed to the `go test` command.
 #
 # Note that the tests rely on testcontainers.
-# In case no Docker daemon is configured, we fallback to Podman.
-# Using Podman can be forced by setting the SB_TESTS_FORCE_PODMAN to a non-empty value.
-set -e
+# In case Podman is available, it is used.
+# You can bypass Podman or force the use of a specific backend by setting DOCKER_HOST,
+# with a command such as:
+# 	docker context ls --format '{{if .Current}}{{.DockerEndpoint}}{{end}}'
+set -eu
 
-# Use Podman if no Docker endpoint is defined or found, or if SB_TESTS_FORCE_PODMAN is not empty.
-if [ -z "${SB_TESTS_FORCE_PODMAN}${DOCKER_HOST}" ] && command -v docker >/dev/null; then
-    docker_endpoint="$(docker context ls --format '{{if .Current}}{{.DockerEndpoint}}{{end}}' 2>/dev/null || true)"
-fi
-if [ "$SB_TESTS_FORCE_PODMAN" ] || [ -z "${DOCKER_HOST}${docker_endpoint}" ]; then
+# Try to use Podman by default.
+if [ -n "${DOCKER_HOST:-}" ]; then
+    printf 'DOCKER_HOST is set in environment, %s will be used.\n' "$DOCKER_HOST"
+elif command -v podman >/dev/null; then
     # See https://podman-desktop.io/tutorial/testcontainers-with-podman#setup-testcontainers-with-podman
-    if ! command -v podman >/dev/null; then
-        echo "Neither Podman CLI or a Docker daemon were found."
-        exit 1
-    fi
-    case "$(uname -s)" in
-        Linux)
-            DOCKER_HOST="unix://${XDG_RUNTIME_DIR:-/run/user/$(id --user)}/podman/podman.sock"
+    kernel_name="$(uname -s)"
+    case "$kernel_name" in
+        Linux)  socket_path="${XDG_RUNTIME_DIR:-/run/user/$(id --user)}/podman/podman.sock"
             ;;
-        Darwin)
-            DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"
+        Darwin) socket_path="$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"
             ;;
-        *)
-            echo "$(uname -s) is not supported."
-            exit 1
+        *) printf '%s is not supported.\n' "$kernel_name"; exit 1
             ;;
     esac
-    if [ ! -e "${DOCKER_HOST#unix://}" ]; then
-        echo "Podman does not seem to be ready to accept connections."
-        echo "Please ensure you have started a Podman machine or system service."
-        # On macOS, this is most likely to be `podman machine start`.
-        # On Linux, you may have a service available, or you can run `podman system service --time=0`.
-        exit 1
+    if [ -e "$socket_path" ]; then
+        export DOCKER_HOST="unix://${socket_path}"
+        # TESTCONTAINERS_RYUK_DISABLED improves stability because the Ryuk container,
+        # used for cleanup, does not always work with Podman.
+        export TESTCONTAINERS_RYUK_DISABLED=true
     fi
-    # TESTCONTAINERS_RYUK_DISABLED improves stability because the Ryuk container,
-    # used for cleanup, does not always work with Podman.
-    export TESTCONTAINERS_RYUK_DISABLED=true
-    export DOCKER_HOST
 fi
 
 echo 'Running tests'
