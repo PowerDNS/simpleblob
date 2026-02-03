@@ -2,7 +2,7 @@ module github.com/PowerDNS/simpleblob
 
 go 1.24.0
 
-toolchain go1.25.1
+toolchain go1.25.6
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
@@ -10,7 +10,7 @@ require (
 	github.com/PowerDNS/go-tlsconfig v0.0.0-20221101135152-0956853b28df
 	github.com/go-logr/logr v1.4.3
 	github.com/minio/minio-go/v7 v7.0.98
-	github.com/prometheus/client_golang v1.23.0
+	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/common v0.67.5
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.11.1
