@@ -43,7 +43,13 @@ const (
 	DefaultSecretsRefreshInterval = 15 * time.Second
 	// DefaultDisableContentMd5 : disable sending the Content-MD5 header
 	DefaultDisableContentMd5 = false
+	// DefaultClientTimeout is the default value for [(Options).ClientTimeout].
+	DefaultClientTimeout = 15 * time.Minute
 )
+
+// ErrClientTimeout is returned when a Store, Read, Delete or List operation
+// reaches the amount set in the [(Options).ClientTimeout] option (default [DefaultClientTimeout]).
+var ErrClientTimeout = errors.New("S3 client timed out")
 
 // Options describes the storage options for the S3 backend
 type Options struct {
@@ -244,26 +250,23 @@ func recordMinioDurationMetric(method string, start time.Time) {
 	metricCallHistogram.WithLabelValues(method).Observe(elapsed.Seconds())
 }
 
-func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobList, error) {
-	var blobs simpleblob.BlobList
-
+func (b *Backend) doList(ctx context.Context, prefix string) (blobs simpleblob.BlobList, err error) {
+	ctx, cancel := b.clientTimeoutContext(ctx)
+	defer cancel()
 	defer recordMinioDurationMetric("list", time.Now())
 
 	// Runes to strip from blob names for GlobalPrefix
 	// This is fine, because we can trust the API to only return with the prefix.
-	// TODO: trust but verify
 	gpEndIndex := len(b.opt.GlobalPrefix)
 
-	objCh := b.client.ListObjects(ctx, b.opt.Bucket, minio.ListObjectsOptions{
+	objIter := b.client.ListObjectsIter(ctx, b.opt.Bucket, minio.ListObjectsOptions{
 		Prefix:    prefix,
 		Recursive: !b.opt.PrefixFolders && !b.opt.HideFolders,
 	})
-	for obj := range objCh {
-		// Handle error returned by MinIO client
-		if err := convertMinioError(obj.Err, true); err != nil {
-			metricCallErrors.WithLabelValues("list").Inc()
-			metricCallErrorsType.WithLabelValues("list", errorToMetricsLabel(err)).Inc()
-			return nil, err
+	for obj := range objIter {
+		if obj.Err != nil {
+			err = obj.Err
+			break
 		}
 
 		metricCalls.WithLabelValues("list").Inc()
@@ -284,6 +287,11 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 
 		blobs = append(blobs, simpleblob.Blob{Name: blobName, Size: obj.Size})
 	}
+	if err = convertError(ctx, err, false); err != nil {
+		metricCallErrors.WithLabelValues("list").Inc()
+		metricCallErrorsType.WithLabelValues("list", errorToMetricsLabel(err)).Inc()
+		return nil, err
+	}
 
 	// Minio appears to return them sorted, but maybe not all implementations
 	// will, so we sort explicitly.
@@ -296,6 +304,8 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 // configured in b.
 func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 	name = b.prependGlobalPrefix(name)
+	ctx, cancel := b.clientTimeoutContext(ctx)
+	defer cancel()
 
 	r, err := b.doLoadReader(ctx, name)
 	if err != nil {
@@ -304,7 +314,7 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 	defer r.Close()
 
 	p, err := io.ReadAll(r)
-	if err = convertMinioError(err, false); err != nil {
+	if err = convertError(ctx, err, false); err != nil {
 		return nil, err
 	}
 	return p, nil
@@ -317,7 +327,7 @@ func (b *Backend) doLoadReader(ctx context.Context, name string) (io.ReadCloser,
 	defer recordMinioDurationMetric("load", time.Now())
 
 	obj, err := b.client.GetObject(ctx, b.opt.Bucket, name, minio.GetObjectOptions{})
-	if err = convertMinioError(err, false); err != nil {
+	if err = convertError(ctx, err, false); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			metricCallErrors.WithLabelValues("load").Inc()
 			metricCallErrorsType.WithLabelValues("load", errorToMetricsLabel(err)).Inc()
@@ -328,7 +338,7 @@ func (b *Backend) doLoadReader(ctx context.Context, name string) (io.ReadCloser,
 		return nil, os.ErrNotExist
 	}
 	info, err := obj.Stat()
-	if err = convertMinioError(err, false); err != nil {
+	if err = convertError(ctx, err, false); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			metricCallErrors.WithLabelValues("load").Inc()
 			metricCallErrorsType.WithLabelValues("load", errorToMetricsLabel(err)).Inc()
@@ -358,6 +368,8 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 
 // doStore is a convenience wrapper around doStoreReader.
 func (b *Backend) doStore(ctx context.Context, name string, data []byte) (minio.UploadInfo, error) {
+	ctx, cancel := b.clientTimeoutContext(ctx)
+	defer cancel()
 	return b.doStoreReader(ctx, name, bytes.NewReader(data), int64(len(data)))
 }
 
@@ -376,12 +388,12 @@ func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader, s
 
 	// minio accepts size == -1, meaning the size is unknown.
 	info, err := b.client.PutObject(ctx, b.opt.Bucket, name, r, size, putObjectOptions)
-	err = convertMinioError(err, false)
-	if err != nil {
+	if err = convertError(ctx, err, false); err != nil {
 		metricCallErrors.WithLabelValues("store").Inc()
 		metricCallErrorsType.WithLabelValues("store", errorToMetricsLabel(err)).Inc()
+		return info, err
 	}
-	return info, err
+	return info, nil
 }
 
 // Delete removes the object identified by name from the S3 Bucket
@@ -400,11 +412,46 @@ func (b *Backend) doDelete(ctx context.Context, name string) error {
 	metricCalls.WithLabelValues("delete").Inc()
 	metricLastCallTimestamp.WithLabelValues("delete").SetToCurrentTime()
 	defer recordMinioDurationMetric("delete", time.Now())
+	ctx, cancel := b.clientTimeoutContext(ctx)
+	defer cancel()
 
 	err := b.client.RemoveObject(ctx, b.opt.Bucket, name, minio.RemoveObjectOptions{})
-	if err = convertMinioError(err, false); err != nil {
+	if err = convertError(ctx, err, false); err != nil {
 		metricCallErrors.WithLabelValues("delete").Inc()
 		metricCallErrorsType.WithLabelValues("delete", errorToMetricsLabel(err)).Inc()
+		return err
+	}
+	return nil
+}
+
+// clientTimeoutContext wraps [context.WithTimeoutCause] with the values and options that caracterise a client timeout.
+func (b *Backend) clientTimeoutContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeoutCause(ctx, getOpt(b.opt.ClientTimeout, DefaultClientTimeout), ErrClientTimeout)
+}
+
+// convertError returns a more informative error from err.
+// It may be converted to a [minio.ErrorResponse],
+// or an [ErrClientTimeout] when ctx was issued by [(*Backend).contextWithTimeout].
+func convertError(ctx context.Context, err error, isList bool) error {
+	if err == nil {
+		return nil
+	}
+	// Try to get a more specific error.
+	if ctx.Err() != nil {
+		err = context.Cause(ctx)
+	} else {
+		errRes := minio.ToErrorResponse(err)
+		switch errRes.Code {
+		case "BucketAlreadyOwnedByYou":
+			// This is the desired outcome if we work on already existing bucket.
+			return nil
+		case "NoSuchKey":
+			// NoSuchKey in a list means the marker is missing.
+			if !isList {
+				// This error does not reflect an upstream issue, so no metrics.
+				return fmt.Errorf("%w: %s", os.ErrNotExist, err.Error())
+			}
+		}
 	}
 	return err
 }
@@ -472,11 +519,6 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 		TLSClientConfig:       tlsConfig,
 		ForceAttemptHTTP2:     true,
 	}
-	hc := &http.Client{
-		Transport: transport,
-		// includes reading response body!
-		Timeout: getOpt(opt.ClientTimeout, 15*time.Minute),
-	}
 
 	// Some of the following calls require a short running context
 	ctx, cancel := context.WithTimeout(ctx, opt.InitTimeout)
@@ -512,7 +554,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	cfg := &minio.Options{
 		Creds:     creds,
 		Secure:    useSSL,
-		Transport: hc.Transport,
+		Transport: transport,
 		Region:    opt.Region,
 	}
 
@@ -537,7 +579,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 
 		err := client.MakeBucket(ctx, opt.Bucket, minio.MakeBucketOptions{Region: opt.Region})
 		if err != nil {
-			if err := convertMinioError(err, false); err != nil {
+			if err := convertError(ctx, err, false); err != nil {
 				return nil, err
 			}
 		}
@@ -561,27 +603,6 @@ func (b *Backend) setGlobalPrefix(prefix string) {
 	b.markerName = b.prependGlobalPrefix(UpdateMarkerFilename)
 }
 
-// convertMinioError takes an error, possibly a minio.ErrorResponse
-// and turns it into a well known error when possible.
-// If error is not well known, it is returned as is.
-// If error is considered to be ignorable, nil is returned.
-func convertMinioError(err error, isList bool) error {
-	if err == nil {
-		return nil
-	}
-	errRes := minio.ToErrorResponse(err)
-	// We need to differentiate between a missing bucket and a missing key,
-	// because a missing bucket is the result of missing rights or a deletion from the outside.
-	// Thus, we do not use `errRes.StatusCode` that would be == 404 for either case.
-	if !isList && errRes.Code == "NoSuchKey" {
-		return fmt.Errorf("%w: %s", os.ErrNotExist, err.Error())
-	}
-	if errRes.Code == "BucketAlreadyOwnedByYou" {
-		return nil
-	}
-	return err
-}
-
 // errorToMetricsLabel converts an error into a prometheus label.
 // If error is a NotExist error, "NotFound" is returned.
 // If error is a timeout, "Timeout" is returned.
@@ -598,6 +619,7 @@ func errorToMetricsLabel(err error) string {
 	}
 	var netError *net.OpError
 	if errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, ErrClientTimeout) ||
 		(errors.As(err, &netError) && netError.Timeout()) {
 		return "Timeout"
 	}
