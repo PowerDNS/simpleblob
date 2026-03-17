@@ -221,3 +221,11 @@ func TestHideFolders(t *testing.T) {
 		assert.Equal(t, []string{"baz"}, ls.Names())
 	})
 }
+
+// TestClientTimeout makes sure the ClientTimeout option is taken into consideration.
+func TestClientTimeout(t *testing.T) {
+	b := getBackend(t.Context(), t)
+	b.opt.ClientTimeout = time.Microsecond
+	_, err := b.Load(t.Context(), "foo")
+	require.ErrorIs(t, err, ErrClientTimeout)
+}
