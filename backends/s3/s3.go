@@ -264,9 +264,10 @@ func (b *Backend) doList(ctx context.Context, prefix string) (blobs simpleblob.B
 		Recursive: !b.opt.PrefixFolders && !b.opt.HideFolders,
 	})
 	for obj := range objIter {
-		if obj.Err != nil {
-			err = obj.Err
-			break
+		if err = convertError(ctx, obj.Err, true); err != nil {
+			metricCallErrors.WithLabelValues("list").Inc()
+			metricCallErrorsType.WithLabelValues("list", errorToMetricsLabel(err)).Inc()
+			return nil, err
 		}
 
 		metricCalls.WithLabelValues("list").Inc()
@@ -286,11 +287,6 @@ func (b *Backend) doList(ctx context.Context, prefix string) (blobs simpleblob.B
 		}
 
 		blobs = append(blobs, simpleblob.Blob{Name: blobName, Size: obj.Size})
-	}
-	if err = convertError(ctx, err, false); err != nil {
-		metricCallErrors.WithLabelValues("list").Inc()
-		metricCallErrorsType.WithLabelValues("list", errorToMetricsLabel(err)).Inc()
-		return nil, err
 	}
 
 	// Minio appears to return them sorted, but maybe not all implementations
