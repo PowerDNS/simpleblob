@@ -313,7 +313,7 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 	return p, nil
 }
 
-func (b *Backend) doLoadReader(ctx context.Context, name string) (io.ReadCloser, error) {
+func (b *Backend) doLoadReader(ctx context.Context, name string) (*minio.Object, error) {
 	metricCalls.WithLabelValues("load").Inc()
 	metricLastCallTimestamp.WithLabelValues("load").SetToCurrentTime()
 
