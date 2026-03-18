@@ -146,11 +146,8 @@ type Options struct {
 	// wait for a TLS handshake. Default if unset: 10s
 	TLSHandshakeTimeout time.Duration `yaml:"tls_handshake_timeout"`
 
-	// ClientTimeout specifies a time limit for requests made by this
-	// HTTP Client. The timeout includes connection time, any
-	// redirects, and reading the response body. The timer remains
-	// running after Get, Head, Post, or Do return and will
-	// interrupt reading of the Response.Body.
+	// ClientTimeout specifies a time limit for operations on the S3 Backend.
+	// If [UseUpdateMarker] is set, saving the marker is considered part of the operation.
 	// Default if unset: 15m
 	ClientTimeout time.Duration `yaml:"client_timeout"`
 
