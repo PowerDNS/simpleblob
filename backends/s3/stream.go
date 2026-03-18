@@ -2,8 +2,10 @@ package s3
 
 import (
 	"context"
+	"errors"
 	"io"
 
+	"github.com/PowerDNS/simpleblob"
 	"github.com/minio/minio-go/v7"
 )
 
@@ -86,7 +88,7 @@ type writerWrapper struct {
 
 func (w *writerWrapper) Write(p []byte) (n int, err error) {
 	if w.closed {
-		return 0, w.prevErr
+		return 0, errors.Join(w.prevErr, simpleblob.ErrClosed)
 	}
 	if err := context.Cause(w.ctx); err != nil {
 		_ = w.Close()
@@ -99,7 +101,7 @@ func (w *writerWrapper) Write(p []byte) (n int, err error) {
 
 func (w *writerWrapper) Close() error {
 	if w.closed {
-		return w.prevErr
+		return errors.Join(w.prevErr, simpleblob.ErrClosed)
 	}
 	w.closed = true
 	w.prevErr = context.Cause(w.ctx)
