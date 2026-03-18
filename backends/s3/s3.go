@@ -349,9 +349,9 @@ func (b *Backend) doLoadReader(ctx context.Context, name string) (*minio.Object,
 // Store sets the content of the object identified by name to the content
 // of data, in the S3 Bucket configured in b.
 func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
-	// Prepend global prefix
 	name = b.prependGlobalPrefix(name)
-
+	ctx, cancel := b.clientTimeoutContext(ctx)
+	defer cancel()
 	info, err := b.doStore(ctx, name, data)
 	if err != nil {
 		return err
@@ -361,10 +361,7 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 
 // doStore is a convenience wrapper around doStoreReader.
 func (b *Backend) doStore(ctx context.Context, name string, data []byte) (minio.UploadInfo, error) {
-	ctx, cancel := b.clientTimeoutContext(ctx)
-	info, err := b.doStoreReader(ctx, name, bytes.NewReader(data), int64(len(data)))
-	cancel()
-	return info, err
+	return b.doStoreReader(ctx, name, bytes.NewReader(data), int64(len(data)))
 }
 
 // doStoreReader stores data with key name in S3, using r as a source for data.
@@ -393,9 +390,9 @@ func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader, s
 // Delete removes the object identified by name from the S3 Bucket
 // configured in b.
 func (b *Backend) Delete(ctx context.Context, name string) error {
-	// Prepend global prefix
 	name = b.prependGlobalPrefix(name)
-
+	ctx, cancel := b.clientTimeoutContext(ctx)
+	defer cancel()
 	if err := b.doDelete(ctx, name); err != nil {
 		return err
 	}
@@ -406,8 +403,6 @@ func (b *Backend) doDelete(ctx context.Context, name string) error {
 	metricCalls.WithLabelValues("delete").Inc()
 	metricLastCallTimestamp.WithLabelValues("delete").SetToCurrentTime()
 	defer recordMinioDurationMetric("delete", time.Now())
-	ctx, cancel := b.clientTimeoutContext(ctx)
-	defer cancel()
 
 	err := b.client.RemoveObject(ctx, b.opt.Bucket, name, minio.RemoveObjectOptions{})
 	if err = convertError(ctx, err, false); err != nil {
