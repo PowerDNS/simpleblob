@@ -365,8 +365,9 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 // doStore is a convenience wrapper around doStoreReader.
 func (b *Backend) doStore(ctx context.Context, name string, data []byte) (minio.UploadInfo, error) {
 	ctx, cancel := b.clientTimeoutContext(ctx)
-	defer cancel()
-	return b.doStoreReader(ctx, name, bytes.NewReader(data), int64(len(data)))
+	info, err := b.doStoreReader(ctx, name, bytes.NewReader(data), int64(len(data)))
+	cancel()
+	return info, err
 }
 
 // doStoreReader stores data with key name in S3, using r as a source for data.
