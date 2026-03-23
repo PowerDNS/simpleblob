@@ -225,33 +225,27 @@ func TestHideFolders(t *testing.T) {
 
 // TestClientTimeout makes sure the ClientTimeout option is taken into consideration.
 func TestClientTimeout(t *testing.T) {
+	b := getBackend(t.Context(), t)
 	t.Run("basic", func(t *testing.T) {
-		t.Parallel()
-		ctx := t.Context()
-		b := getBackend(ctx, t)
 		b.opt.ClientTimeout = time.Microsecond
-		ctx, _ = b.clientTimeoutContext(ctx)
+		ctx, _ := b.clientTimeoutContext(t.Context())
 		time.Sleep(time.Second)
 		require.ErrorIs(t, context.Cause(ctx), ErrClientTimeout)
 	})
 	t.Run("crud", func(t *testing.T) {
-		t.Parallel()
-		ctx := t.Context()
-		b := getBackend(ctx, t)
 		b.opt.ClientTimeout = time.Microsecond
-		assert.ErrorIs(t, b.Store(ctx, "store", []byte("123")), ErrClientTimeout)
-		_, err := b.Load(ctx, "load")
+		ctx := t.Context()
+		assert.ErrorIs(t, b.Store(ctx, "crudTest", []byte("123")), ErrClientTimeout)
+		_, err := b.Load(ctx, "crudTest")
 		assert.ErrorIs(t, err, ErrClientTimeout)
 		assert.ErrorIs(t, b.Delete(ctx, "delete"), ErrClientTimeout)
 		_, err = b.List(ctx, "")
 		assert.ErrorIs(t, err, ErrClientTimeout)
 	})
 	t.Run("stream write", func(t *testing.T) {
-		t.Parallel()
-		ctx := t.Context()
-		b := getBackend(ctx, t)
 		b.opt.ClientTimeout = time.Millisecond
-		w, err := b.NewWriter(ctx, "failOnWrite")
+		ctx := t.Context()
+		w, err := b.NewWriter(ctx, "failOnWriteTest")
 		require.NoError(t, err)
 		time.Sleep(5 * time.Millisecond)
 		_, err = w.Write([]byte("123"))
@@ -259,13 +253,12 @@ func TestClientTimeout(t *testing.T) {
 		require.ErrorIs(t, w.Close(), ErrClientTimeout)
 	})
 	t.Run("stream read", func(t *testing.T) {
-		t.Parallel()
+		b.opt.ClientTimeout = 0 // Reset
 		ctx := t.Context()
-		b := getBackend(ctx, t)
-		require.NoError(t, b.Store(ctx, "failOnRead", []byte("123"))) // avoid ErrNoExist
+		require.NoError(t, b.Store(ctx, "failOnReadTest", []byte("123"))) // avoid ErrNoExist
 
 		b.opt.ClientTimeout = time.Millisecond
-		r, err := b.NewReader(ctx, "failOnRead")
+		r, err := b.NewReader(ctx, "failOnReadTest")
 		require.NoError(t, err)
 		time.Sleep(5 * time.Millisecond)
 		_, err = r.Read(make([]byte, 1))
