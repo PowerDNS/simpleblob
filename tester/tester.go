@@ -132,4 +132,16 @@ func DoBackendTests(t *testing.T, b simpleblob.Interface) {
 	ls, err = b.List(ctx, "")
 	assert.NoError(t, err)
 	assert.NotContains(t, ls.Names(), "foo-1")
+
+	// Should gracefully accept context cancellation.
+	ctx1, cancel1 := context.WithCancel(ctx)
+	cancel1()
+	_, err = b.List(ctx1, "")
+	assert.ErrorIs(t, err, context.Canceled)
+	_, err = b.Load(ctx1, "anything")
+	assert.ErrorIs(t, err, context.Canceled)
+	err = b.Delete(ctx1, "anything")
+	assert.ErrorIs(t, err, context.Canceled)
+	err = b.Store(ctx1, "anything", []byte{})
+	assert.ErrorIs(t, err, context.Canceled)
 }

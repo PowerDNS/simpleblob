@@ -14,7 +14,7 @@ import (
 // anything and returns no error.
 func (b *Backend) setMarker(ctx context.Context, name, etag string, isDel bool) error {
 	if !b.opt.UseUpdateMarker {
-		return nil
+		return ctx.Err()
 	}
 	nanos := time.Now().UnixNano()
 	s := fmt.Sprintf("%s:%s:%d:%v", name, etag, nanos, isDel)
