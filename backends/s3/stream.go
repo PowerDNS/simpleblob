@@ -45,7 +45,7 @@ type writerWrapper struct {
 }
 
 // Write sends p to store as the S3 object associated with w.
-// An error is returned if Write failed previously, an error occured in S3, or w is already closed.
+// An error is returned if Write failed previously, an error occurred in S3, or w is already closed.
 func (w *writerWrapper) Write(p []byte) (n int, err error) {
 	// Not checking the status of ctx explicitly because it will be propagated
 	// from the reader goroutine.
@@ -54,7 +54,7 @@ func (w *writerWrapper) Write(p []byte) (n int, err error) {
 }
 
 // Close ensures that the written data is saved.
-// An error is returned if Write failed previously, an error occured in S3, or w is already closed.
+// An error is returned if Write failed previously, an error occurred in S3, or w is already closed.
 func (w *writerWrapper) Close() (err error) {
 	err = w.prevErr
 	_ = w.pw.CloseWithError(err)
