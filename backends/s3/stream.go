@@ -28,10 +28,7 @@ func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, e
 	go func(ctx context.Context, b *Backend, name string, pr *io.PipeReader, cancel context.CancelFunc) {
 		// This call returns when the pipe is closed, or when an error occurs.
 		info, err := b.doStoreReader(ctx, name, pr, -1)
-		switch err {
-		case context.DeadlineExceeded:
-			err = context.Cause(ctx)
-		case nil:
+		if err == nil {
 			_ = b.setMarker(ctx, name, info.ETag, false)
 		}
 		_ = pr.CloseWithError(err)
@@ -63,7 +60,7 @@ func (w *writerWrapper) Close() (err error) {
 	err = w.prevErr
 	_ = w.pw.CloseWithError(err)
 	if w.prevErr == nil {
-		w.prevErr = errors.Join(simpleblob.ErrClosed, context.Cause(w.ctx))
+		w.prevErr = simpleblob.ErrClosed
 	}
 	<-w.ctx.Done()
 	return err
