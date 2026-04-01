@@ -2,10 +2,10 @@ package s3
 
 import (
 	"context"
+	"errors"
 	"io"
 
 	"github.com/PowerDNS/simpleblob"
-	"github.com/minio/minio-go/v7"
 )
 
 // NewReader satisfies StreamReader and provides a read streaming interface to
@@ -22,60 +22,49 @@ func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, er
 // NewWriter satisfies StreamWriter and provides a write streaming interface to
 // a blob located on an S3 server.
 func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
+	ctx, cancel := context.WithCancel(ctx)
 	name = b.prependGlobalPrefix(name)
 	pr, pw := io.Pipe()
-	w := &writerWrapper{
-		ctx:      ctx,
-		backend:  b,
-		name:     name,
-		pw:       pw,
-		donePipe: make(chan struct{}),
-	}
-	go func() {
-		var err error
-		// The following call will return only on error or
-		// if the writing end of the pipe is closed.
-		// It is okay to write to w.info from this goroutine
-		// because it will only be used after w.donePipe is closed.
-		w.info, err = w.backend.doStoreReader(w.ctx, w.name, pr, -1)
-		_ = pr.CloseWithError(err) // Always returns nil.
-		close(w.donePipe)
-	}()
-	return w, nil
+	go func(ctx context.Context, b *Backend, name string, pr *io.PipeReader, cancel context.CancelFunc) {
+		// This call returns when the pipe is closed, or when an error occurs.
+		info, err := b.doStoreReader(ctx, name, pr, -1)
+		switch err {
+		case context.DeadlineExceeded:
+			err = context.Cause(ctx)
+		case nil:
+			_ = b.setMarker(ctx, name, info.ETag, false)
+		}
+		_ = pr.CloseWithError(err)
+		cancel()
+	}(ctx, b, name, pr, cancel)
+	return &writerWrapper{b, nil, ctx, pw}, nil
 }
 
-// A writerWrapper implements io.WriteCloser and is returned by (*Backend).NewWriter.
+// A writerWrapper allows storing data on S3 through a io.WriteCloser.
 type writerWrapper struct {
 	backend *Backend
-
-	// We need to keep these around
-	// to write the marker in Close.
-	ctx  context.Context
-	info minio.UploadInfo
-	name string
-
-	// Writes are sent to this pipe
-	// and then written to S3 in a background goroutine.
-	pw       *io.PipeWriter
-	donePipe chan struct{}
+	prevErr error // never nil after Close has been called
+	ctx     context.Context
+	pw      *io.PipeWriter
 }
 
-func (w *writerWrapper) Write(p []byte) (int, error) {
+// Write sends p to store as the S3 object associated with w.
+// An error is returned if Write failed previously, an error occured on the S3 side, or w is already closed.
+func (w *writerWrapper) Write(p []byte) (n int, err error) {
 	// Not checking the status of ctx explicitly because it will be propagated
 	// from the reader goroutine.
-	return w.pw.Write(p)
+	n, w.prevErr = w.pw.Write(p)
+	return n, w.prevErr
 }
 
-func (w *writerWrapper) Close() error {
-	select {
-	case <-w.donePipe:
-		return simpleblob.ErrClosed
-	default:
+// Close ensures that the written data is saved.
+// An error is returned if Write failed previously, an error occured on the S3 side, or w is already closed.
+func (w *writerWrapper) Close() (err error) {
+	err = w.prevErr
+	_ = w.pw.CloseWithError(err)
+	if w.prevErr == nil {
+		w.prevErr = errors.Join(simpleblob.ErrClosed, context.Cause(w.ctx))
 	}
-	_ = w.pw.Close() // Always returns nil.
-	<-w.donePipe     // Wait for doStoreReader to return and w.info to be set.
-	return w.backend.setMarker(w.ctx, w.name, w.info.ETag, false)
+	<-w.ctx.Done()
+	return err
 }
