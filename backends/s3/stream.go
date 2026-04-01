@@ -2,7 +2,6 @@ package s3
 
 import (
 	"context"
-	"errors"
 	"io"
 
 	"github.com/PowerDNS/simpleblob"
