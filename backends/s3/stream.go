@@ -33,7 +33,7 @@ func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, e
 		_ = pr.CloseWithError(err)
 		cancel()
 	}(ctx, b, name, pr, cancel)
-	return &writerWrapper{b, nil, ctx, pw}, nil
+	return &writerWrapper{backend: b, ctx: ctx, pw: pw}, nil
 }
 
 // A writerWrapper allows storing data on S3 through a io.WriteCloser.
