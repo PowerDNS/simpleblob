@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
@@ -21,8 +23,7 @@ import (
 )
 
 // Azure blob implementation examples can be found here:
-//https://github.com/Azure/azure-sdk-for-go/blob/main/sdk/storage/azblob/examples_test.go
-
+// https://github.com/Azure/azure-sdk-for-go/blob/main/sdk/storage/azblob/examples_test.go
 const (
 	// DefaultInitTimeout is the time we allow for initialisation, like credential
 	// checking and bucket creation. We define this here, because we do not
@@ -33,14 +34,9 @@ const (
 	// DefaultUpdateMarkerForceListInterval is the default value for
 	// UpdateMarkerForceListInterval.
 	DefaultUpdateMarkerForceListInterval = 5 * time.Minute
-	// DefaultDisableContentMd5 : disable sending the Content-MD5 header
-	DefaultDisableContentMd5 = false
-	// Max number of concurrent uploads to be performed to upload the file
-	DefaultConcurrency = 1
 )
 
 type Options struct {
-
 	// AccountName and AccountKey are statically defined here.
 	AccountName string `yaml:"account_name"`
 	AccountKey  string `yaml:"account_key"`
@@ -57,11 +53,8 @@ type Options struct {
 	// seamlessly
 	GlobalPrefix string `yaml:"global_prefix"`
 
-	// EndpointURL can be set to something like "http://localhost:9000" for local testing
+	// EndpointURL can be set to something like "http://localhost:10000" for Azurite
 	EndpointURL string `yaml:"endpoint_url"`
-
-	// DisableContentMd5 defines whether to disable sending the Content-MD5 header
-	DisableContentMd5 bool `yaml:"disable_send_content_md5"`
 
 	// TLS allows customising the TLS configuration
 	// See https://github.com/PowerDNS/go-tlsconfig for the available options
@@ -71,6 +64,35 @@ type Options struct {
 	// checking and bucket creation. It defaults to DefaultInitTimeout, which
 	// is currently 20s.
 	InitTimeout time.Duration `yaml:"init_timeout"`
+
+	// IdleConnTimeout is the maximum amount of time an idle
+	// (keep-alive) connection will remain idle before closing
+	// itself. Default if unset: 90s
+	IdleConnTimeout time.Duration `yaml:"idle_conn_timeout"`
+
+	// MaxIdleConns controls the maximum number of idle (keep-alive)
+	// connections. Default if unset: 100
+	MaxIdleConns int `yaml:"max_idle_conns"`
+
+	// DialTimeout is the maximum amount of time a dial will wait for
+	// a connect to complete. Default if unset: 10s
+	DialTimeout time.Duration `yaml:"dial_timeout"`
+
+	// DialKeepAlive specifies the interval between keep-alive
+	// probes for an active network connection. Default if unset: 10s
+	DialKeepAlive time.Duration `yaml:"dial_keep_alive"`
+
+	// TLSHandshakeTimeout specifies the maximum amount of time to
+	// wait for a TLS handshake. Default if unset: 10s
+	TLSHandshakeTimeout time.Duration `yaml:"tls_handshake_timeout"`
+
+	// ClientTimeout specifies a time limit for requests made by this
+	// HTTP Client. The timeout includes connection time, any
+	// redirects, and reading the response body. The timer remains
+	// running after Get, Head, Post, or Do return and will
+	// interrupt reading of the Response.Body.
+	// Default if unset: 15m
+	ClientTimeout time.Duration `yaml:"client_timeout"`
 
 	// UseUpdateMarker makes the backend write and read a file to determine if
 	// it can cache the last List command. The file contains the name of the
@@ -88,9 +110,9 @@ type Options struct {
 	// some reason get out of sync.
 	UpdateMarkerForceListInterval time.Duration `yaml:"update_marker_force_list_interval"`
 
-	// Concurrency defines the max number of concurrent uploads to be performed to upload the file.
-	// Each concurrent upload will create a buffer of size BlockSize.  The default value is one.
-	// https://github.com/Azure/azure-sdk-for-go/blob/e5c902ce7aca5aa0f4c7bb7e46c18c8fc91ad458/sdk/storage/azblob/blockblob/models.go#L264
+	// Concurrency defines the max number of concurrent uploads as defined in
+	// azblob.UploadStreamOptions. The default value there is one.
+	// https://pkg.go.dev/github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob#UploadStreamOptions.Concurrency
 	Concurrency int `yaml:"concurrency"`
 
 	// Not loaded from YAML
@@ -131,15 +153,9 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	if opt.InitTimeout == 0 {
 		opt.InitTimeout = DefaultInitTimeout
 	}
-
 	if opt.UpdateMarkerForceListInterval == 0 {
 		opt.UpdateMarkerForceListInterval = DefaultUpdateMarkerForceListInterval
 	}
-
-	if opt.Concurrency == 0 {
-		opt.Concurrency = DefaultConcurrency
-	}
-
 	if err := opt.Check(); err != nil {
 		return nil, err
 	}
@@ -150,17 +166,56 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	}
 	log = log.WithName("azure")
 
-	var endpoint string
-
-	accountName := opt.AccountName
-
-	if opt.EndpointURL != "" {
-		endpoint = opt.EndpointURL
-	} else {
-		endpoint = fmt.Sprintf("https://%s.blob.core.windows.net", accountName)
+	// Automatic TLS handling
+	// This MUST receive a longer running context to be able to automatically
+	// reload certificates, so we use the original ctx, not one with added
+	// InitTimeout.
+	tlsmgr, err := tlsconfig.NewManager(ctx, opt.TLS, tlsconfig.Options{
+		IsClient: true,
+		Logr:     log.WithName("tls-manager"),
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	var client *azblob.Client
+	// Create an opinionated HTTP client that:
+	// - Uses a custom tls.Config
+	// - Sets proxies from the environment
+	// - Sets reasonable timeouts on various operations
+	// Based on tlsConfig.HTTPClient(), copied to allow overrides.
+	tlsConfig, err := tlsmgr.TLSConfig()
+	if err != nil {
+		return nil, err
+	}
+	transport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   getOpt(opt.DialTimeout, 10*time.Second),
+			KeepAlive: getOpt(opt.DialKeepAlive, 10*time.Second),
+		}).DialContext,
+		MaxIdleConns:          getOpt(opt.MaxIdleConns, 100),
+		IdleConnTimeout:       getOpt(opt.IdleConnTimeout, 90*time.Second),
+		TLSHandshakeTimeout:   getOpt(opt.TLSHandshakeTimeout, 10*time.Second),
+		ExpectContinueTimeout: 10 * time.Second,
+		TLSClientConfig:       tlsConfig,
+		ForceAttemptHTTP2:     true,
+	}
+	options := &azblob.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: &http.Client{
+				Transport: transport,
+				Timeout:   getOpt(opt.ClientTimeout, 15*time.Minute),
+			},
+		},
+	}
+
+	if opt.EndpointURL == "" {
+		opt.EndpointURL = fmt.Sprintf("https://%s.blob.core.windows.net", opt.AccountName)
+	}
+
+	// Some of the following calls require a short running context
+	ctx, cancel := context.WithTimeout(ctx, opt.InitTimeout)
+	defer cancel()
 
 	// Default path: let the Azure SDK decide how to authenticate
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
@@ -168,7 +223,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 		return nil, err
 	}
 
-	client, err = azblob.NewClient(endpoint, cred, nil)
+	client, err := azblob.NewClient(opt.EndpointURL, cred, options)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +241,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 			return nil, err
 		}
 
-		client, err = azblob.NewClientWithSharedKeyCredential(endpoint, cred, nil)
+		client, err = azblob.NewClientWithSharedKeyCredential(opt.EndpointURL, cred, options)
 		if err != nil {
 			return nil, err
 		}
@@ -198,7 +253,6 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 		metricLastCallTimestamp.WithLabelValues("create-container").SetToCurrentTime()
 
 		_, err := client.CreateContainer(ctx, opt.Container, &azblob.CreateContainerOptions{})
-
 		if err != nil {
 			if bloberror.HasCode(err, bloberror.ContainerAlreadyExists) {
 				logrus.WithField("storage_type", "Azure").Infof("Container already exists: %s", opt.Container)
@@ -217,6 +271,14 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	b.setGlobalPrefix(opt.GlobalPrefix)
 
 	return b, nil
+}
+
+func getOpt[T comparable](optVal, defaultVal T) T {
+	var zero T
+	if optVal == zero {
+		return defaultVal
+	}
+	return optVal
 }
 
 func (b *Backend) List(ctx context.Context, prefix string) (blobList simpleblob.BlobList, err error) {
@@ -287,14 +349,16 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 
 	// Runes to strip from blob names for GlobalPrefix
 	// This is fine, because we can trust the API to only return with the prefix.
+	// TODO: trust but verify
 	gpEndIndex := len(b.opt.GlobalPrefix)
 
 	// Use Azure SDK to get blobs from container
-	blobPager := b.client.NewListBlobsFlatPager(b.opt.Container, nil)
+	blobPager := b.client.NewListBlobsFlatPager(b.opt.Container, &azblob.ListBlobsFlatOptions{
+		Prefix: &prefix,
+	})
 
 	for blobPager.More() {
 		resp, err := blobPager.NextPage(ctx)
-
 		if err != nil {
 			return nil, err
 		}
@@ -307,28 +371,20 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 
 		for _, v := range resp.Segment.BlobItems {
 			blobName := *v.Name
-
-			// We have to manually check for prefix since Azure doesn't support querying by prefix
-			if !strings.HasPrefix(blobName, prefix) {
-				continue
-			}
-
 			if blobName == b.markerName {
 				continue
 			}
 
-			size := *v.Properties.ContentLength
-
+			// Strip global prefix from blob
 			if gpEndIndex > 0 {
 				blobName = blobName[gpEndIndex:]
 			}
 
-			blobs = append(blobs, simpleblob.Blob{Name: blobName, Size: size})
+			blobs = append(blobs, simpleblob.Blob{Name: blobName, Size: *v.Properties.ContentLength})
 		}
 	}
 
-	// Sort explicitly.
-	blobs.Sort()
+	metricLastCallTimestamp.WithLabelValues("list").SetToCurrentTime()
 
 	return blobs, nil
 }
@@ -378,7 +434,6 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 	name = b.prependGlobalPrefix(name)
 
 	info, err := b.doStore(ctx, name, data)
-
 	if err != nil {
 		return err
 	}
@@ -403,7 +458,6 @@ func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader, s
 
 	// Perform UploadStream
 	resp, err := b.client.UploadStream(ctx, b.opt.Container, name, r, uploadStreamOptions)
-
 	if err != nil {
 		metricCallErrors.WithLabelValues("store").Inc()
 		return azblob.UploadStreamResponse{}, err
