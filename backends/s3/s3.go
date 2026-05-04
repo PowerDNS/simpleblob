@@ -187,7 +187,6 @@ type Backend struct {
 	opt        Options
 	config     *minio.Options
 	client     *minio.Client
-	log        logr.Logger
 	markerName string
 
 	mu         sync.Mutex
@@ -547,7 +546,6 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 		opt:    opt,
 		config: cfg,
 		client: client,
-		log:    log,
 	}
 	b.setGlobalPrefix(opt.GlobalPrefix)
 
