@@ -157,6 +157,9 @@ func (o Options) Check() error {
 		if !hasStaticCreds && !hasSecretsCreds {
 			return fmt.Errorf("azure storage.options: account_name and either account_key or account_key_file are required when use_shared_key is true")
 		}
+		if hasSecretsCreds && o.SecretsRefreshInterval < time.Second {
+			return fmt.Errorf("azure storage.options: field secrets_refresh_interval must be at least 1s")
+		}
 	}
 
 	return nil
@@ -171,6 +174,9 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	}
 	if opt.UpdateMarkerForceListInterval == 0 {
 		opt.UpdateMarkerForceListInterval = DefaultUpdateMarkerForceListInterval
+	}
+	if opt.SecretsRefreshInterval == 0 {
+		opt.SecretsRefreshInterval = DefaultSecretsRefreshInterval
 	}
 	if err := opt.Check(); err != nil {
 		return nil, err
