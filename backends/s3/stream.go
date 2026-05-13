@@ -3,7 +3,6 @@ package s3
 import (
 	"context"
 	"io"
-	"sync"
 )
 
 // NewReader satisfies StreamReader and provides a read streaming interface to
@@ -20,24 +19,25 @@ func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, er
 // NewWriter satisfies StreamWriter and provides a write streaming interface to
 // a blob located on an S3 server.
 func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, error) {
+	ctx, cancel := context.WithCancel(ctx)
 	name = b.prependGlobalPrefix(name)
 	pr, pw := io.Pipe()
-	w := &writerWrapper{pw: pw}
-	w.wg.Go(func() {
+	go func(ctx context.Context, b *Backend, name string, pr *io.PipeReader, cancel context.CancelFunc) {
 		// This call returns when the pipe is closed, or when an error occurs.
 		info, err := b.doStoreReader(ctx, name, pr, -1)
 		if err == nil {
 			_ = b.setMarker(ctx, name, info.ETag, false)
 		}
 		_ = pr.CloseWithError(err)
-	})
-	return w, nil
+		cancel()
+	}(ctx, b, name, pr, cancel)
+	return &writerWrapper{ctx: ctx, pw: pw}, nil
 }
 
 // A writerWrapper allows storing data on S3 through a io.WriteCloser.
 type writerWrapper struct {
-	wg sync.WaitGroup
-	pw *io.PipeWriter
+	ctx context.Context
+	pw  *io.PipeWriter
 }
 
 // Write sends p to store as the S3 object associated with w.
@@ -55,6 +55,6 @@ func (w *writerWrapper) Close() error {
 	_ = w.pw.Close()
 	// Let the reading goroutine finish writing,
 	// and write the marker if needed.
-	w.wg.Wait()
+	<-w.ctx.Done() // cancelled after writing the marker
 	return err
 }
