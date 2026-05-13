@@ -22,7 +22,7 @@ func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, e
 	ctx, cancel := context.WithCancel(ctx)
 	name = b.prependGlobalPrefix(name)
 	pr, pw := io.Pipe()
-	go func(ctx context.Context, b *Backend, name string, pr *io.PipeReader, cancel context.CancelFunc) {
+	go func() {
 		// This call returns when the pipe is closed, or when an error occurs.
 		info, err := b.doStoreReader(ctx, name, pr, -1)
 		if err == nil {
@@ -30,7 +30,7 @@ func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, e
 		}
 		_ = pr.CloseWithError(err)
 		cancel()
-	}(ctx, b, name, pr, cancel)
+	}()
 	return &writerWrapper{ctx: ctx, pw: pw}, nil
 }
 
