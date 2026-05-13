@@ -3,8 +3,6 @@ package s3
 import (
 	"context"
 	"io"
-
-	"github.com/PowerDNS/simpleblob"
 )
 
 // NewReader satisfies StreamReader and provides a read streaming interface to
@@ -39,7 +37,6 @@ func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, e
 // A writerWrapper allows storing data on S3 through a io.WriteCloser.
 type writerWrapper struct {
 	backend *Backend
-	prevErr error // never nil after Close has been called
 	ctx     context.Context
 	pw      *io.PipeWriter
 }
@@ -49,24 +46,16 @@ type writerWrapper struct {
 func (w *writerWrapper) Write(p []byte) (int, error) {
 	// Not checking the status of ctx explicitly because it will be propagated
 	// from the reader goroutine.
-	if w.prevErr != nil {
-		return 0, w.prevErr
-	}
-	n, err := w.pw.Write(p)
-	if err != nil {
-		w.prevErr = err
-	}
-	return n, err
+	return w.pw.Write(p)
 }
 
 // Close ensures that the written data is saved.
 // An error is returned if Write failed previously, an error occurred in S3, or w is already closed.
-func (w *writerWrapper) Close() (err error) {
-	err = w.prevErr
-	_ = w.pw.CloseWithError(err)
-	if w.prevErr == nil {
-		w.prevErr = simpleblob.ErrClosed
-	}
+func (w *writerWrapper) Close() error {
+	_, err := w.pw.Write(nil)
+	_ = w.pw.Close()
+	// Let the reading goroutine finish writing,
+	// and write the marker if needed.
 	<-w.ctx.Done() // cancelled after writing the marker
 	return err
 }
