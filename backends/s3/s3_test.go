@@ -2,6 +2,7 @@ package s3
 
 import (
 	"context"
+	"io"
 	"testing"
 	"time"
 
@@ -221,3 +222,75 @@ func TestHideFolders(t *testing.T) {
 		assert.Equal(t, []string{"baz"}, ls.Names())
 	})
 }
+
+// TestClientTimeout makes sure the ClientTimeout option is taken into consideration.
+func TestClientTimeout(t *testing.T) {
+	b := getBackend(t.Context(), t)
+	t.Run("basic", func(t *testing.T) {
+		b.opt.ClientTimeout = time.Microsecond
+		ctx, _ := b.clientTimeoutContext(t.Context())
+		time.Sleep(time.Second)
+		require.ErrorIs(t, context.Cause(ctx), ErrClientTimeout)
+	})
+	t.Run("crud", func(t *testing.T) {
+		b.opt.ClientTimeout = time.Microsecond
+		ctx := t.Context()
+		assert.ErrorIs(t, b.Store(ctx, "crudTest", []byte("123")), ErrClientTimeout)
+		_, err := b.Load(ctx, "crudTest")
+		assert.ErrorIs(t, err, ErrClientTimeout)
+		assert.ErrorIs(t, b.Delete(ctx, "delete"), ErrClientTimeout)
+		_, err = b.List(ctx, "")
+		assert.ErrorIs(t, err, ErrClientTimeout)
+	})
+	t.Run("stream write", func(t *testing.T) {
+		b.opt.ClientTimeout = time.Millisecond
+		ctx := t.Context()
+		w, err := b.NewWriter(ctx, "failOnWriteTest")
+		require.NoError(t, err)
+		time.Sleep(5 * time.Millisecond)
+		_, err = w.Write([]byte("123"))
+		require.ErrorIs(t, err, ErrClientTimeout)
+		require.ErrorIs(t, w.Close(), ErrClientTimeout)
+	})
+	t.Run("stream read", func(t *testing.T) {
+		b.opt.ClientTimeout = 0 // Reset
+		ctx := t.Context()
+		require.NoError(t, b.Store(ctx, "failOnReadTest", []byte("123"))) // avoid ErrNoExist
+
+		b.opt.ClientTimeout = time.Millisecond
+		r, err := b.NewReader(ctx, "failOnReadTest")
+		require.NoError(t, err)
+		time.Sleep(5 * time.Millisecond)
+		_, err = r.Read(make([]byte, 1))
+		require.ErrorIs(t, err, ErrClientTimeout)
+		require.ErrorIs(t, r.Close(), ErrClientTimeout)
+	})
+}
+
+// Ensure that in Minio Client, context cancellation aborts
+// an ongoing PutObject or GetObject operation.
+func TestMinioKeepsContext(t *testing.T) {
+	t.Parallel()
+	t.Run("putObject", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(t.Context())
+		b := getBackend(ctx, t)
+		_, err := b.client.PutObject(ctx, b.opt.Bucket, "putObject", readerOnce(cancel), -1, minio.PutObjectOptions{})
+		require.ErrorIs(t, err, context.Canceled)
+	})
+	t.Run("getObject", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(t.Context())
+		b := getBackend(ctx, t)
+		require.NoError(t, b.Store(ctx, "getObject", []byte("123"))) // avoid ErrNoExist
+		obj, err := b.client.GetObject(ctx, b.opt.Bucket, "getObject", minio.GetObjectOptions{})
+		require.NoError(t, err)
+		cancel()
+		_, err = io.Copy(io.Discard, obj)
+		require.ErrorIs(t, err, context.Canceled)
+	})
+}
+
+type readerOnce context.CancelFunc
+
+func (f readerOnce) Read(p []byte) (int, error) { f(); return len(p), nil }
