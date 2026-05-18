@@ -2,10 +2,8 @@ package s3
 
 import (
 	"context"
-	"errors"
 	"io"
 
-	"github.com/PowerDNS/simpleblob"
 	"github.com/minio/minio-go/v7"
 )
 
@@ -49,63 +47,41 @@ func (r *readWrapper) Close() (err error) {
 // a blob located on an S3 server.
 func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, error) {
 	ctx, cancel := b.clientTimeoutContext(ctx)
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
 	name = b.prependGlobalPrefix(name)
 	pr, pw := io.Pipe()
-	w := &writerWrapper{
-		ctx:     ctx,
-		backend: b,
-		pw:      pw,
-	}
-	go func(ctx context.Context, b *Backend, name string, pr *io.PipeReader, cancel context.CancelFunc) {
+	go func() {
 		// This call returns when the pipe is closed, or when an error occurs.
-		// It is okay to write to w.info from this goroutine
-		// because it will only be used after the WaitGroup is done.
 		info, err := b.doStoreReader(ctx, name, pr, -1)
 		if err == nil {
 			_ = b.setMarker(ctx, name, info.ETag, false)
 		}
+		_ = pr.CloseWithError(err)
 		cancel()
-	}(ctx, b, name, pr, cancel)
-	return w, nil
+	}()
+	return &writerWrapper{ctx: ctx, pw: pw}, nil
 }
 
-// A writerWrapper implements io.WriteCloser and is returned by (*Backend).NewWriter.
+// A writerWrapper allows storing data on S3 through a io.WriteCloser.
 type writerWrapper struct {
-	backend *Backend
-	closed  bool
-	prevErr error
-
-	// We keep track of the context in Write and Close.
 	ctx context.Context
-
-	// Writes are sent to this pipe
-	// and then written to S3 in a background goroutine.
-	pw *io.PipeWriter
+	pw  *io.PipeWriter
 }
 
-func (w *writerWrapper) Write(p []byte) (n int, err error) {
-	if w.closed {
-		return 0, errors.Join(w.prevErr, simpleblob.ErrClosed)
-	}
-	if err := context.Cause(w.ctx); err != nil {
-		_ = w.Close()
-		w.prevErr = err
-		return 0, err
-	}
-	n, w.prevErr = w.pw.Write(p)
-	return n, w.prevErr
+// Write sends p to store as the S3 object associated with w.
+// An error is returned if Write failed previously, an error occurred in S3, or w is already closed.
+func (w *writerWrapper) Write(p []byte) (int, error) {
+	// Not checking the status of ctx explicitly because it will be propagated
+	// from the reader goroutine.
+	return w.pw.Write(p)
 }
 
+// Close ensures that the written data is saved.
+// An error is returned if Write failed previously, an error occurred in S3, or w is already closed.
 func (w *writerWrapper) Close() error {
-	if w.closed {
-		return errors.Join(w.prevErr, simpleblob.ErrClosed)
-	}
-	w.closed = true
-	w.prevErr = context.Cause(w.ctx)
-	_ = w.pw.CloseWithError(w.prevErr)
-	<-w.ctx.Done()
-	return w.prevErr
+	_, err := w.pw.Write(nil)
+	_ = w.pw.Close()
+	// Let the reading goroutine finish writing,
+	// and write the marker if needed.
+	<-w.ctx.Done() // cancelled after writing the marker
+	return err
 }

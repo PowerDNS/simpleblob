@@ -6,6 +6,7 @@
 Simpleblob is a Go module that simplifies the storage of arbitrary data by key from Go code. It ships with the following backends:
 
 - `s3`: S3 bucket storage
+- `azure`: Azure Blob storage
 - `fs`: File storage (one file per blob)
 - `memory`: Memory storage (for tests)
 
@@ -63,6 +64,6 @@ If not, a convenience wrapper for the storage is returned.
 
 ## API Stability
 
-We support the last two stable Go versions, currently 1.24 and 1.25.
+We support the last two stable Go versions, currently 1.25 and 1.26.
 
 From a API consumer point of view, we do not plan any backward incompatible changes before a v1.0.
