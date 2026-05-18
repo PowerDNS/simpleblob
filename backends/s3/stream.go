@@ -46,14 +46,16 @@ func (r *readWrapper) Close() (err error) {
 // NewWriter satisfies StreamWriter and provides a write streaming interface to
 // a blob located on an S3 server.
 func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, error) {
-	ctx, cancel := b.clientTimeoutContext(ctx)
+	ctx, cancel := context.WithCancel(ctx)
 	name = b.prependGlobalPrefix(name)
 	pr, pw := io.Pipe()
 	go func() {
 		// This call returns when the pipe is closed, or when an error occurs.
-		info, err := b.doStoreReader(ctx, name, pr, -1)
+		ctx1, _ := b.clientTimeoutContext(ctx)
+		info, err := b.doStoreReader(ctx1, name, pr, -1)
 		if err == nil {
-			_ = b.setMarker(ctx, name, info.ETag, false)
+			ctx2, _ := b.clientTimeoutContext(ctx)
+			_ = b.setMarker(ctx2, name, info.ETag, false)
 		}
 		_ = pr.CloseWithError(err)
 		cancel()
