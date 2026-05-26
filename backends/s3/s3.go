@@ -203,6 +203,9 @@ func (b *Backend) List(ctx context.Context, prefix string) (blobList simpleblob.
 	combinedPrefix := b.prependGlobalPrefix(prefix)
 
 	if !b.opt.UseUpdateMarker {
+		ctx, cancel := b.clientTimeoutContext(ctx)
+		defer cancel()
+
 		return b.doList(ctx, combinedPrefix)
 	}
 
@@ -227,6 +230,9 @@ func (b *Backend) List(ctx context.Context, prefix string) (blobList simpleblob.
 		return blobs.WithPrefix(prefix), nil
 	}
 
+	ctx, cancel := b.clientTimeoutContext(ctx)
+	defer cancel()
+
 	blobs, err = b.doList(ctx, b.opt.GlobalPrefix) // We want to cache all, so no prefix
 	if err != nil {
 		return nil, err
@@ -249,8 +255,6 @@ func recordMinioDurationMetric(method string, start time.Time) {
 func (b *Backend) doList(ctx context.Context, prefix string) (blobs simpleblob.BlobList, err error) {
 	metricCalls.WithLabelValues("list").Inc()
 	metricLastCallTimestamp.WithLabelValues("list").SetToCurrentTime()
-	ctx, cancel := b.clientTimeoutContext(ctx)
-	defer cancel()
 	defer recordMinioDurationMetric("list", time.Now())
 
 	// Runes to strip from blob names for GlobalPrefix
