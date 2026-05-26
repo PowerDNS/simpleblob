@@ -3,17 +3,44 @@ package s3
 import (
 	"context"
 	"io"
+
+	"github.com/minio/minio-go/v7"
 )
 
 // NewReader satisfies StreamReader and provides a read streaming interface to
 // a blob located on an S3 server.
 func (b *Backend) NewReader(ctx context.Context, name string) (io.ReadCloser, error) {
+	ctx, cancel := b.clientTimeoutContext(ctx)
 	name = b.prependGlobalPrefix(name)
 	r, err := b.doLoadReader(ctx, name)
 	if err != nil {
 		return nil, err
 	}
-	return r, nil
+	return &readWrapper{r, ctx, cancel}, nil
+}
+
+// A readWrapper implements io.ReadCloser and allows keeping the context around.
+type readWrapper struct {
+	obj    *minio.Object
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+func (r *readWrapper) Read(b []byte) (n int, err error) {
+	n, err = r.obj.Read(b)
+	if err == context.DeadlineExceeded {
+		return n, context.Cause(r.ctx)
+	}
+	return n, err
+}
+
+func (r *readWrapper) Close() (err error) {
+	err = r.obj.Close()
+	if err == nil {
+		err = context.Cause(r.ctx)
+	}
+	r.cancel()
+	return err
 }
 
 // NewWriter satisfies StreamWriter and provides a write streaming interface to
@@ -24,9 +51,11 @@ func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, e
 	pr, pw := io.Pipe()
 	go func() {
 		// This call returns when the pipe is closed, or when an error occurs.
-		info, err := b.doStoreReader(ctx, name, pr, -1)
+		ctx1, _ := b.clientTimeoutContext(ctx)
+		info, err := b.doStoreReader(ctx1, name, pr, -1)
 		if err == nil {
-			_ = b.setMarker(ctx, name, info.ETag, false)
+			ctx2, _ := b.clientTimeoutContext(ctx)
+			_ = b.setMarker(ctx2, name, info.ETag, false)
 		}
 		_ = pr.CloseWithError(err)
 		cancel()
