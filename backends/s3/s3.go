@@ -247,6 +247,8 @@ func recordMinioDurationMetric(method string, start time.Time) {
 }
 
 func (b *Backend) doList(ctx context.Context, prefix string) (blobs simpleblob.BlobList, err error) {
+	metricCalls.WithLabelValues("list").Inc()
+	metricLastCallTimestamp.WithLabelValues("list").SetToCurrentTime()
 	ctx, cancel := b.clientTimeoutContext(ctx)
 	defer cancel()
 	defer recordMinioDurationMetric("list", time.Now())
@@ -266,8 +268,6 @@ func (b *Backend) doList(ctx context.Context, prefix string) (blobs simpleblob.B
 			return nil, err
 		}
 
-		metricCalls.WithLabelValues("list").Inc()
-		metricLastCallTimestamp.WithLabelValues("list").SetToCurrentTime()
 		if obj.Key == b.markerName {
 			continue
 		}
@@ -315,7 +315,6 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 func (b *Backend) doLoadReader(ctx context.Context, name string) (*minio.Object, error) {
 	metricCalls.WithLabelValues("load").Inc()
 	metricLastCallTimestamp.WithLabelValues("load").SetToCurrentTime()
-
 	defer recordMinioDurationMetric("load", time.Now())
 
 	obj, err := b.client.GetObject(ctx, b.opt.Bucket, name, minio.GetObjectOptions{})
