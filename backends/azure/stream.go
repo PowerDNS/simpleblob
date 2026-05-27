@@ -40,7 +40,7 @@ func (b *Backend) NewWriter(ctx context.Context, name string) (io.WriteCloser, e
 		// if the writing end of the pipe is closed.
 		// It is okay to write to w.info from this goroutine
 		// because it will only be used after w.donePipe is closed.
-		w.info, err = w.backend.doStoreReader(w.ctx, w.name, pr, -1)
+		w.info, err = w.backend.doStoreReader(w.ctx, w.name, pr)
 		_ = pr.CloseWithError(err) // Always returns nil.
 		close(w.donePipe)
 	}()

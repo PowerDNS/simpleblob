@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/expfmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -29,13 +31,6 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 	if err != nil {
 		t.Fatalf("failed to start container: %v", err)
 	}
-
-	state, err := azuriteContainer.State(ctx)
-	if err != nil {
-		t.Fatalf("failed to get container state: %v", err)
-	}
-
-	t.Log(state.Running)
 
 	serviceURL, err := azuriteContainer.BlobServiceURL(ctx)
 	require.NoError(t, err)
@@ -138,4 +133,33 @@ func TestBackend_globalPrefixAndMarker(t *testing.T) {
 
 	tester.DoBackendTests(t, b)
 	assert.NotEmpty(t, b.lastMarker)
+}
+
+func TestMetrics(t *testing.T) {
+	metricName := "storage_azure_call_error_by_type_total"
+	metricCallErrorsType.Reset() // Ensure no metrics are left from other tests
+	b := getBackend(t.Context(), t)
+
+	// Operations on a healthy backend do not collect any metrics.
+	assert.Equal(t, 0, testutil.CollectAndCount(metricCallErrorsType, metricName))
+	var (
+		_    = b.Store(t.Context(), "my-key", []byte{})
+		_, _ = b.Load(t.Context(), "my-key")
+		_    = b.Delete(t.Context(), "my-key")
+		_, _ = b.Load(t.Context(), "no-such-key") // ErrNotExist is not collected
+		_    = b.Delete(t.Context(), "no-such-key")
+		_, _ = b.List(t.Context(), "")
+	)
+	assert.Equal(t, 0, testutil.CollectAndCount(metricCallErrorsType, metricName))
+
+	// A failed operation generates metrics.
+	savedContainer := b.opt.Container
+	b.opt.Container = "non-existent-container"
+	assert.Error(t, b.Store(t.Context(), "file-in-non-existent-container", []byte{})) // Fails due to missing bucket
+	b.opt.Container = savedContainer
+	assert.Equal(t, 1, testutil.CollectAndCount(metricCallErrorsType, metricName))
+	p, err := testutil.CollectAndFormat(metricCallErrorsType, expfmt.TypeProtoCompact, metricName)
+	require.NoError(t, err)
+	assert.Regexp(t, `label:{name:"method"\s+value:"store"}`, string(p))
+	assert.Regexp(t, `label:{name:"error"\s+value:"ContainerNotFound"}`, string(p))
 }
