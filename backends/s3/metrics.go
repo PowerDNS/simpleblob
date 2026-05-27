@@ -1,6 +1,14 @@
 package s3
 
 import (
+	"context"
+	"errors"
+	"net"
+	"net/url"
+	"os"
+	"time"
+
+	"github.com/minio/minio-go/v7"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -42,6 +50,39 @@ var (
 		[]string{"method"},
 	)
 )
+
+func recordCallMetrics(method string, start time.Time) {
+	metricCalls.WithLabelValues(method).Inc()
+	metricLastCallTimestamp.WithLabelValues(method).SetToCurrentTime()
+	metricCallHistogram.WithLabelValues(method).Observe(time.Since(start).Seconds())
+}
+
+func recordErrorMetrics(method string, err error) {
+	if err == nil {
+		return
+	}
+	errorLabel := "Unknown"
+	var netErr *net.OpError
+	var dnsErr *net.DNSError
+	var urlErr *url.Error
+	errRes := minio.ToErrorResponse(err)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		errorLabel = "NotFound"
+	case errors.Is(err, context.DeadlineExceeded),
+		errors.Is(err, ErrClientTimeout),
+		(errors.As(err, &netErr) && netErr.Timeout()):
+		errorLabel = "Timeout"
+	case errors.As(err, &dnsErr):
+		errorLabel = "DNSError"
+	case errors.As(err, &urlErr):
+		errorLabel = "URLError"
+	case errRes.Code != "":
+		errorLabel = errRes.Code
+	}
+	metricCallErrors.WithLabelValues(method).Inc()
+	metricCallErrorsType.WithLabelValues(method, errorLabel).Inc()
+}
 
 func init() {
 	prometheus.MustRegister(metricLastCallTimestamp)

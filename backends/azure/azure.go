@@ -307,13 +307,12 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 
 	if opt.CreateContainer {
 		// Create bucket if it does not exist
-		metricCalls.WithLabelValues("create-container").Inc()
-		metricLastCallTimestamp.WithLabelValues("create-container").SetToCurrentTime()
-
+		start := time.Now()
 		_, err := client.CreateContainer(ctx, opt.Container, &azblob.CreateContainerOptions{})
 		if err != nil && !bloberror.HasCode(err, bloberror.ContainerAlreadyExists) {
 			return nil, err
 		}
+		recordCallMetrics("create-container", start)
 	}
 
 	b := &Backend{
@@ -399,6 +398,8 @@ func convertAzureError(err error) error {
 }
 
 func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobList, error) {
+	defer recordCallMetrics("list", time.Now())
+
 	var blobs simpleblob.BlobList
 
 	// Runes to strip from blob names for GlobalPrefix
@@ -414,6 +415,7 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 	for blobPager.More() {
 		resp, err := blobPager.NextPage(ctx)
 		if err != nil {
+			recordErrorMetrics("list", err)
 			return nil, err
 		}
 
@@ -438,8 +440,6 @@ func (b *Backend) doList(ctx context.Context, prefix string) (simpleblob.BlobLis
 		}
 	}
 
-	metricLastCallTimestamp.WithLabelValues("list").SetToCurrentTime()
-
 	return blobs, nil
 }
 
@@ -463,13 +463,14 @@ func (b *Backend) Load(ctx context.Context, name string) ([]byte, error) {
 }
 
 func (b *Backend) doLoadReader(ctx context.Context, name string) (io.ReadCloser, error) {
-	metricCalls.WithLabelValues("load").Inc()
-	metricLastCallTimestamp.WithLabelValues("load").SetToCurrentTime()
+	defer recordCallMetrics("load", time.Now())
 
 	// Download the blob's contents and ensure that the download worked properly
 	blobDownloadResponse, err := b.client.DownloadStream(ctx, b.opt.Container, name, nil)
 	if err = convertAzureError(err); err != nil {
-		metricCallErrors.WithLabelValues("load").Inc()
+		if !errors.Is(err, os.ErrNotExist) {
+			recordErrorMetrics("load", err)
+		}
 		return nil, err
 	}
 
@@ -497,14 +498,12 @@ func (b *Backend) Store(ctx context.Context, name string, data []byte) error {
 
 // doStore is a convenience wrapper around doStoreReader.
 func (b *Backend) doStore(ctx context.Context, name string, data []byte) (azblob.UploadStreamResponse, error) {
-	return b.doStoreReader(ctx, name, bytes.NewReader(data), int64(len(data)))
+	return b.doStoreReader(ctx, name, bytes.NewReader(data))
 }
 
 // doStoreReader stores data with key name in Azure blob, using r as a source for data.
-// The value of size may be -1, in case the size is not known.
-func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader, size int64) (azblob.UploadStreamResponse, error) {
-	metricCalls.WithLabelValues("store").Inc()
-	metricLastCallTimestamp.WithLabelValues("store").SetToCurrentTime()
+func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader) (azblob.UploadStreamResponse, error) {
+	defer recordCallMetrics("store", time.Now())
 
 	uploadStreamOptions := &azblob.UploadStreamOptions{
 		Concurrency: b.opt.Concurrency,
@@ -513,7 +512,7 @@ func (b *Backend) doStoreReader(ctx context.Context, name string, r io.Reader, s
 	// Perform UploadStream
 	resp, err := b.client.UploadStream(ctx, b.opt.Container, name, r, uploadStreamOptions)
 	if err != nil {
-		metricCallErrors.WithLabelValues("store").Inc()
+		recordErrorMetrics("store", err)
 		return azblob.UploadStreamResponse{}, err
 	}
 
@@ -533,8 +532,7 @@ func (b *Backend) Delete(ctx context.Context, name string) error {
 }
 
 func (b *Backend) doDelete(ctx context.Context, name string) error {
-	metricCalls.WithLabelValues("delete").Inc()
-	metricLastCallTimestamp.WithLabelValues("delete").SetToCurrentTime()
+	defer recordCallMetrics("delete", time.Now())
 
 	_, err := b.client.DeleteBlob(ctx, b.opt.Container, name, nil)
 
@@ -543,7 +541,7 @@ func (b *Backend) doDelete(ctx context.Context, name string) error {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
-		metricCallErrors.WithLabelValues("delete").Inc()
+		recordErrorMetrics("delete", err)
 		return err
 	}
 
