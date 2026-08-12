@@ -53,19 +53,27 @@ var ErrClientTimeout = errors.New("S3 client timed out")
 
 // Options describes the storage options for the S3 backend
 type Options struct {
-	// AccessKey and SecretKey are statically defined here.
-	AccessKey string `yaml:"access_key"`
-	SecretKey string `yaml:"secret_key"`
+	// AccessKey, SecretKey and SessionToken are statically defined here.
+	// SessionToken is optional.
+	AccessKey    string `yaml:"access_key"`
+	SecretKey    string `yaml:"secret_key"`
+	SessionToken string `yaml:"session_token"`
 
 	// Path to the file containing the access key
-	// as an alternative to AccessKey and SecretKey,
+	// as an alternative to AccessKey, SecretKey and SessionToken,
 	// e.g. /etc/s3-secrets/access-key.
 	AccessKeyFile string `yaml:"access_key_file"`
 
 	// Path to the file containing the secret key
-	// as an alternative to AccessKey and SecretKey,
+	// as an alternative to AccessKey, SecretKey and SessionToken,
 	// e.g. /etc/s3-secrets/secret-key.
 	SecretKeyFile string `yaml:"secret_key_file"`
+
+	// Path to the file containing the session token
+	// as an alternative to AccessKey, SecretKey and SessionToken,
+	// e.g. /etc/s3-secrets/session-token.
+	// Even if using this authentication method, the value is optional.
+	SessionTokenFile string `yaml:"session_token_file"`
 
 	// Time between each secrets retrieval.
 	// Minimum is 1s, lower values are considered an error.
@@ -515,12 +523,13 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 		return nil, fmt.Errorf("unsupported scheme for S3: %q, use http or https", u.Scheme)
 	}
 
-	creds := credentials.NewStaticV4(opt.AccessKey, opt.SecretKey, "")
+	creds := credentials.NewStaticV4(opt.AccessKey, opt.SecretKey, opt.SessionToken)
 	if opt.AccessKeyFile != "" {
 		creds = credentials.New(&FileSecretsCredentials{
-			AccessKeyFile:   opt.AccessKeyFile,
-			SecretKeyFile:   opt.SecretKeyFile,
-			RefreshInterval: opt.SecretsRefreshInterval,
+			AccessKeyFile:    opt.AccessKeyFile,
+			SecretKeyFile:    opt.SecretKeyFile,
+			SessionTokenFile: opt.SessionTokenFile,
+			RefreshInterval:  opt.SecretsRefreshInterval,
 		})
 	}
 
