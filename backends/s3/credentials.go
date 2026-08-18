@@ -13,7 +13,7 @@ import (
 // https://kubernetes.io/docs/tasks/inject-data-application/distribute-credentials-secure
 // and https://docs.docker.com/engine/swarm/secrets.
 //
-// It supports an empty or deleted SessionTokenFile.
+// It supports an empty SessionTokenFile.
 type FileSecretsCredentials struct {
 	credentials.Expiry
 
