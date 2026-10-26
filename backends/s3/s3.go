@@ -185,11 +185,13 @@ func (o Options) Check() error {
 	if !hasSecretsCreds && !hasStaticCreds {
 		return fmt.Errorf("s3 storage.options: credentials are required, fill either (access_key and secret_key) or (access_key_filename and secret_key_filename)")
 	}
-	if hasSecretsCreds && hasStaticCreds {
-		return fmt.Errorf("s3 storage.options: both static and file-based credentials cannot be used at the same time")
-	}
-	if hasSecretsCreds && o.SecretsRefreshInterval < time.Second {
-		return fmt.Errorf("s3 storage.options: field secrets_refresh_interval must be at least 1s")
+	if hasSecretsCreds {
+		if hasStaticCreds {
+			return fmt.Errorf("s3 storage.options: both static and file-based credentials cannot be used at the same time")
+		}
+		if n := o.SecretsRefreshInterval; n != 0 && n < time.Second {
+			return fmt.Errorf("s3 storage.options: field secrets_refresh_interval must be at least 1s")
+		}
 	}
 	if o.Bucket == "" {
 		return fmt.Errorf("s3 storage.options: bucket is required")
