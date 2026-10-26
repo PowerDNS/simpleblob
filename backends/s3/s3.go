@@ -180,10 +180,13 @@ type Options struct {
 }
 
 func (o Options) Check() error {
-	hasSecretsCreds := o.AccessKeyFile != "" && o.SecretKeyFile != ""
-	hasStaticCreds := o.AccessKey != "" && o.SecretKey != ""
+	hasSecretsCreds := len(o.AccessKeyFile)+len(o.SecretKeyFile)+len(o.SessionTokenFile) != 0 || o.SecretsRefreshInterval != 0
+	hasStaticCreds := len(o.AccessKey)+len(o.SecretKey)+len(o.SessionToken) != 0
 	if !hasSecretsCreds && !hasStaticCreds {
 		return fmt.Errorf("s3 storage.options: credentials are required, fill either (access_key and secret_key) or (access_key_filename and secret_key_filename)")
+	}
+	if hasSecretsCreds && hasStaticCreds {
+		return fmt.Errorf("s3 storage.options: both static and file-based credentials cannot be used at the same time")
 	}
 	if hasSecretsCreds && o.SecretsRefreshInterval < time.Second {
 		return fmt.Errorf("s3 storage.options: field secrets_refresh_interval must be at least 1s")
@@ -453,9 +456,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	if opt.EndpointURL == "" {
 		opt.EndpointURL = DefaultEndpointURL
 	}
-	if opt.SecretsRefreshInterval == 0 {
-		opt.SecretsRefreshInterval = DefaultSecretsRefreshInterval
-	}
+	// SecretsRefreshInterval has a default that we only assign later to avoid interfering with checks.
 	if err := opt.Check(); err != nil {
 		return nil, err
 	}
@@ -525,6 +526,9 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 
 	creds := credentials.NewStaticV4(opt.AccessKey, opt.SecretKey, opt.SessionToken)
 	if opt.AccessKeyFile != "" {
+		if opt.SecretsRefreshInterval == 0 {
+			opt.SecretsRefreshInterval = DefaultSecretsRefreshInterval
+		}
 		creds = credentials.New(&FileSecretsCredentials{
 			AccessKeyFile:    opt.AccessKeyFile,
 			SecretKeyFile:    opt.SecretKeyFile,

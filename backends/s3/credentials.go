@@ -8,8 +8,8 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-// FileSecretsCredentials is an implementation of Minio's credentials.Provider,
-// allowing to read credentials from Kubernetes or Docker secrets, as described in
+// FileSecretsCredentials implements Minio's [credentials.Provider],
+// allowing to read credentials from files such as Kubernetes or Docker secrets, as described in
 // https://kubernetes.io/docs/tasks/inject-data-application/distribute-credentials-secure
 // and https://docs.docker.com/engine/swarm/secrets.
 //
