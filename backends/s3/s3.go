@@ -529,6 +529,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 
 	creds := credentials.NewStaticV4(opt.AccessKey, opt.SecretKey, opt.SessionToken)
 	if opt.AccessKeyFile != "" {
+		// At this point, `(Options).Check` has made sure we have file-based credentials only.
 		if opt.SecretsRefreshInterval == 0 {
 			opt.SecretsRefreshInterval = DefaultSecretsRefreshInterval
 		}
