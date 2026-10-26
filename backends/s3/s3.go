@@ -55,6 +55,7 @@ var ErrClientTimeout = errors.New("S3 client timed out")
 type Options struct {
 	// AccessKey, SecretKey and SessionToken are statically defined here.
 	// SessionToken is optional.
+	// You cannot define both static values and file-based values.
 	AccessKey    string `yaml:"access_key"`
 	SecretKey    string `yaml:"secret_key"`
 	SessionToken string `yaml:"session_token"`
@@ -69,10 +70,10 @@ type Options struct {
 	// e.g. /etc/s3-secrets/secret-key.
 	SecretKeyFile string `yaml:"secret_key_file"`
 
-	// Path to the file containing the session token
+	// Optional path to the file containing the session token
 	// as an alternative to AccessKey, SecretKey and SessionToken,
 	// e.g. /etc/s3-secrets/session-token.
-	// Even if using this authentication method, the value is optional.
+	// An empty file is supported.
 	SessionTokenFile string `yaml:"session_token_file"`
 
 	// Time between each secrets retrieval.
