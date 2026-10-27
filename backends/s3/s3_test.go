@@ -19,7 +19,7 @@ import (
 
 func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 	testcontainers.SkipIfProviderIsNotHealthy(t)
-	container, err := testcontainersminio.Run(ctx, "quay.io/minio/minio")
+	container, err := testcontainersminio.Run(ctx, "docker.io/pgsty/silo:distroless")
 	if err != nil {
 		t.Fatal(err)
 	}
