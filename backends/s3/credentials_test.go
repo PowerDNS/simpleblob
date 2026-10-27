@@ -32,7 +32,7 @@ func TestFileSecretsCredentials(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	container, err := testcontainersminio.Run(ctx, "quay.io/minio/minio")
+	container, err := testcontainersminio.Run(ctx, "docker.io/pgsty/silo:distroless")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestBackendWithSecrets(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	container, err := testcontainersminio.Run(ctx, "quay.io/minio/minio")
+	container, err := testcontainersminio.Run(ctx, "docker.io/pgsty/silo:distroless")
 	if err != nil {
 		t.Fatal(err)
 	}
