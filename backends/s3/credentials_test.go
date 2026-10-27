@@ -180,7 +180,7 @@ func writeSecrets(t testing.TB, dir, adminUser, password, token string) {
 // setupMinioServer starts a container and returns information to connect.
 func setupMinioServer(t *testing.T) (container *testcontainersminio.MinioContainer, addr string) {
 	testcontainers.SkipIfProviderIsNotHealthy(t)
-	container, err := testcontainersminio.Run(t.Context(), "quay.io/minio/minio")
+	container, err := testcontainersminio.Run(t.Context(), "docker.io/pgsty/silo:distroless")
 	if err != nil {
 		t.Fatal(err)
 	}
