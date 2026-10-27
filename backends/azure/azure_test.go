@@ -30,6 +30,8 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 
 	azuriteContainer, err := testcontainers.Run(t.Context(), "mcr.microsoft.com/azure-storage/azurite",
 		testcontainers.WithEntrypoint("azurite"),
+		// Discrepancies in supported versions between the latest azurite and `azblob` module
+		// require us to use `--skipApiVersionCheck`.
 		testcontainers.WithCmd("--blobPort", blobPort, "--blobHost", "0.0.0.0", "--skipApiVersionCheck"),
 		testcontainers.WithExposedPorts(port),
 		testcontainers.WithWaitStrategy(wait.ForListeningPort(port)),
