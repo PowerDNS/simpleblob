@@ -24,8 +24,8 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 		port     = blobPort + "/tcp"
 		// accountName and accountKey are the default testing account name and key used by Azurite
 		// Those were copied from github.com/testcontainers/testcontainers-go/modules/azure/azurite.
-		accountName string = "devstoreaccount1"
-		accountKey  string = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+		accountName = "devstoreaccount1"
+		accountKey  = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
 	)
 
 	azuriteContainer, err := testcontainers.Run(t.Context(), "mcr.microsoft.com/azure-storage/azurite",
