@@ -36,7 +36,7 @@ go test -count=1 "$@" ./...
 
 echo
 echo 'Running linters'
-expected_version=2.12.2
+expected_version=2.15.0
 golangci_lint_bin=./bin/golangci-lint
 if [ "$("$golangci_lint_bin" version --short)" != "$expected_version" ]; then
     # This is the recommended installation process.
