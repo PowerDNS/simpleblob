@@ -20,12 +20,10 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 	testcontainers.SkipIfProviderIsNotHealthy(t)
 
 	const (
-		blobPort = "10000"
-		port     = blobPort + "/tcp"
-		// accountName and accountKey are the default testing account name and key used by Azurite
-		// Those were copied from github.com/testcontainers/testcontainers-go/modules/azure/azurite.
-		accountName = "devstoreaccount1"
-		accountKey  = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+		blobPort    = "10000"
+		port        = blobPort + "/tcp"
+		accountName = "sb_azurite_account"
+		accountKey  = "c2JfYXp1cml0ZV9rZXkK" // base64("sb_azurite_key")
 	)
 
 	azuriteContainer, err := testcontainers.Run(t.Context(), "mcr.microsoft.com/azure-storage/azurite",
@@ -35,6 +33,7 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 		testcontainers.WithCmd("--blobPort", blobPort, "--blobHost", "0.0.0.0", "--skipApiVersionCheck"),
 		testcontainers.WithExposedPorts(port),
 		testcontainers.WithWaitStrategy(wait.ForListeningPort(port)),
+		testcontainers.WithEnv(map[string]string{"AZURITE_ACCOUNTS": accountName + ":" + accountKey}),
 	)
 	t.Cleanup(func() {
 		if err := testcontainers.TerminateContainer(azuriteContainer); err != nil {
