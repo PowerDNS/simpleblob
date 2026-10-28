@@ -53,19 +53,28 @@ var ErrClientTimeout = errors.New("S3 client timed out")
 
 // Options describes the storage options for the S3 backend
 type Options struct {
-	// AccessKey and SecretKey are statically defined here.
-	AccessKey string `yaml:"access_key"`
-	SecretKey string `yaml:"secret_key"`
+	// AccessKey, SecretKey and SessionToken are statically defined here.
+	// SessionToken is optional.
+	// You cannot define both static values and file-based values.
+	AccessKey    string `yaml:"access_key"`
+	SecretKey    string `yaml:"secret_key"`
+	SessionToken string `yaml:"session_token"`
 
 	// Path to the file containing the access key
-	// as an alternative to AccessKey and SecretKey,
+	// as an alternative to AccessKey, SecretKey and SessionToken,
 	// e.g. /etc/s3-secrets/access-key.
 	AccessKeyFile string `yaml:"access_key_file"`
 
 	// Path to the file containing the secret key
-	// as an alternative to AccessKey and SecretKey,
+	// as an alternative to AccessKey, SecretKey and SessionToken,
 	// e.g. /etc/s3-secrets/secret-key.
 	SecretKeyFile string `yaml:"secret_key_file"`
+
+	// Optional path to the file containing the session token
+	// as an alternative to AccessKey, SecretKey and SessionToken,
+	// e.g. /etc/s3-secrets/session-token.
+	// An empty file is supported.
+	SessionTokenFile string `yaml:"session_token_file"`
 
 	// Time between each secrets retrieval.
 	// Minimum is 1s, lower values are considered an error.
@@ -172,13 +181,18 @@ type Options struct {
 }
 
 func (o Options) Check() error {
-	hasSecretsCreds := o.AccessKeyFile != "" && o.SecretKeyFile != ""
-	hasStaticCreds := o.AccessKey != "" && o.SecretKey != ""
+	hasSecretsCreds := len(o.AccessKeyFile)+len(o.SecretKeyFile)+len(o.SessionTokenFile) != 0 || o.SecretsRefreshInterval != 0
+	hasStaticCreds := len(o.AccessKey)+len(o.SecretKey)+len(o.SessionToken) != 0
 	if !hasSecretsCreds && !hasStaticCreds {
 		return fmt.Errorf("s3 storage.options: credentials are required, fill either (access_key and secret_key) or (access_key_filename and secret_key_filename)")
 	}
-	if hasSecretsCreds && o.SecretsRefreshInterval < time.Second {
-		return fmt.Errorf("s3 storage.options: field secrets_refresh_interval must be at least 1s")
+	if hasSecretsCreds {
+		if hasStaticCreds {
+			return fmt.Errorf("s3 storage.options: both static and file-based credentials cannot be used at the same time")
+		}
+		if n := o.SecretsRefreshInterval; n != 0 && n < time.Second {
+			return fmt.Errorf("s3 storage.options: field secrets_refresh_interval must be at least 1s")
+		}
 	}
 	if o.Bucket == "" {
 		return fmt.Errorf("s3 storage.options: bucket is required")
@@ -445,9 +459,7 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 	if opt.EndpointURL == "" {
 		opt.EndpointURL = DefaultEndpointURL
 	}
-	if opt.SecretsRefreshInterval == 0 {
-		opt.SecretsRefreshInterval = DefaultSecretsRefreshInterval
-	}
+	// SecretsRefreshInterval has a default that we only assign later to avoid interfering with checks.
 	if err := opt.Check(); err != nil {
 		return nil, err
 	}
@@ -515,12 +527,17 @@ func New(ctx context.Context, opt Options) (*Backend, error) {
 		return nil, fmt.Errorf("unsupported scheme for S3: %q, use http or https", u.Scheme)
 	}
 
-	creds := credentials.NewStaticV4(opt.AccessKey, opt.SecretKey, "")
+	creds := credentials.NewStaticV4(opt.AccessKey, opt.SecretKey, opt.SessionToken)
 	if opt.AccessKeyFile != "" {
+		// At this point, `(Options).Check` has made sure we have file-based credentials only.
+		if opt.SecretsRefreshInterval == 0 {
+			opt.SecretsRefreshInterval = DefaultSecretsRefreshInterval
+		}
 		creds = credentials.New(&FileSecretsCredentials{
-			AccessKeyFile:   opt.AccessKeyFile,
-			SecretKeyFile:   opt.SecretKeyFile,
-			RefreshInterval: opt.SecretsRefreshInterval,
+			AccessKeyFile:    opt.AccessKeyFile,
+			SecretKeyFile:    opt.SecretKeyFile,
+			SessionTokenFile: opt.SessionTokenFile,
+			RefreshInterval:  opt.SecretsRefreshInterval,
 		})
 	}
 
