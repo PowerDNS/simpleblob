@@ -11,17 +11,30 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/azure/azurite"
+	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/PowerDNS/simpleblob/tester"
 )
 
-var azuriteContainer *azurite.Container
-
 func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 	testcontainers.SkipIfProviderIsNotHealthy(t)
 
-	azuriteContainer, err := azurite.Run(ctx, "mcr.microsoft.com/azure-storage/azurite", azurite.WithEnabledServices(azurite.BlobService))
+	const (
+		blobPort    = "10000"
+		port        = blobPort + "/tcp"
+		accountName = "sb_azurite_account"
+		accountKey  = "c2JfYXp1cml0ZV9rZXkK" // base64("sb_azurite_key")
+	)
+
+	azuriteContainer, err := testcontainers.Run(t.Context(), "mcr.microsoft.com/azure-storage/azurite",
+		testcontainers.WithEntrypoint("azurite"),
+		// Discrepancies in supported versions between the latest azurite and `azblob` module
+		// require us to use `--skipApiVersionCheck`.
+		testcontainers.WithCmd("--blobPort", blobPort, "--blobHost", "0.0.0.0", "--skipApiVersionCheck"),
+		testcontainers.WithExposedPorts(port),
+		testcontainers.WithWaitStrategy(wait.ForListeningPort(port)),
+		testcontainers.WithEnv(map[string]string{"AZURITE_ACCOUNTS": accountName + ":" + accountKey}),
+	)
 	t.Cleanup(func() {
 		if err := testcontainers.TerminateContainer(azuriteContainer); err != nil {
 			t.Errorf("failed to terminate container: %s", err)
@@ -32,17 +45,17 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 		t.Fatalf("failed to start container: %v", err)
 	}
 
-	serviceURL, err := azuriteContainer.BlobServiceURL(ctx)
+	serviceURL, err := azuriteContainer.PortEndpoint(ctx, port, "http")
 	require.NoError(t, err)
 
 	// create an azblob.Client for the specified storage account that uses the above credentials
-	blobServiceURL := fmt.Sprintf("%s/%s", serviceURL, azurite.AccountName)
+	blobServiceURL := fmt.Sprintf("%s/%s", serviceURL, accountName)
 
 	b, err = New(ctx, Options{
 		EndpointURL:     blobServiceURL,
 		UseSharedKey:    true,
-		AccountName:     azurite.AccountName,
-		AccountKey:      azurite.AccountKey,
+		AccountName:     accountName,
+		AccountKey:      accountKey,
 		Container:       "test-container",
 		CreateContainer: true,
 	})
@@ -68,22 +81,18 @@ func getBackend(ctx context.Context, t *testing.T) (b *Backend) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		cleanStorage(ctx)
+		if err := testcontainers.TerminateContainer(azuriteContainer); err != nil {
+			t.Fatalf("failed to terminate container: %v", err)
+		}
 	})
 	cleanStorage(ctx)
 
 	return b
 }
 
-func tearDown(t *testing.T) {
-	if err := testcontainers.TerminateContainer(azuriteContainer); err != nil {
-		t.Fatalf("failed to terminate container: %v", err)
-	}
-}
-
 func TestBackend(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	defer tearDown(t)
 
 	b := getBackend(ctx, t)
 	tester.DoBackendTests(t, b)
@@ -93,7 +102,6 @@ func TestBackend(t *testing.T) {
 func TestBackend_marker(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	defer tearDown(t)
 
 	b := getBackend(ctx, t)
 	b.opt.UseUpdateMarker = true
@@ -112,7 +120,6 @@ func TestBackend_marker(t *testing.T) {
 func TestBackend_globalprefix(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	defer tearDown(t)
 
 	b := getBackend(ctx, t)
 	b.setGlobalPrefix("v5/")
@@ -124,7 +131,6 @@ func TestBackend_globalprefix(t *testing.T) {
 func TestBackend_globalPrefixAndMarker(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	defer tearDown(t)
 
 	// Start the backend over
 	b := getBackend(ctx, t)
